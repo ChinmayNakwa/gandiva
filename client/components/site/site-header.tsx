@@ -8,6 +8,7 @@ import { NAV_ITEMS } from "@/lib/nav";
 import { InfoBar } from "./info-bar";
 import { LogoLockup } from "./logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WalletButton } from "@/components/auth/wallet-button";
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -44,6 +45,7 @@ export function SiteHeader() {
             <Link href="/marketplace">Open dashboard</Link>
           </Button>
           <ThemeToggle />
+          <WalletButton />
         </div>
       </div>
 

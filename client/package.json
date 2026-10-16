@@ -20,7 +20,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "shadcn": "^4.22.0",
-    "swr": "^2.5.1"
+    "swr": "^2.5.1",
+    "viem": "^2.57.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
