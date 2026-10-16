@@ -3,8 +3,8 @@
 A marketplace where AI agents hire other agents and pay **per request in USDC** using **x402 v2** HTTP payments on **Base Sepolia**. No API keys, no cards, no invoices: a seller answers `402 Payment Required`, the buyer signs an EIP-3009 authorisation, and the facilitator settles it on-chain. Every paid call has its own transaction hash.
 
 - **Registry**: sellers list services (name, category, endpoint, price in USDC units, network, payTo, input/output JSON Schema, description). Search over HTTP or on the web page.
-- **Sellers** (one per category, plus demo bad actors): `shelf-scraper` (scraping), `fx-rates` (data), `hindi-summary` (inference, Ollama LLM).
-- **Buyer agent "Scout"**: takes a plain-language task and a budget, picks sellers by reputation and price, pays per request, validates and combines results, and explains what it bought, from whom, why, and at what cost.
+- **Sellers** (several per category, plus demo bad actors): `shelf-scraper` (scraping), `fx-rates` and `city-info` (data: ECB rates; Open-Meteo weather plus the local currency), `hindi-summary` and `sentiment` (inference, Ollama LLM).
+- **Buyer agent "Scout"**: takes a plain-language task and a budget. An LLM plans the work in a few turns (which services to hire, in what order, with what inputs); deterministic code checks every plan against the listed schemas, estimates the cost against the budget, and pays through the safety layer. Interchangeable sellers fail over to each other. It explains what it bought, from whom, why, and at what cost.
 - **Ledger + web app** (Next.js): every attempted call with status, amounts, tx hash (explorer link) and latency, plus a seller-side sales view.
 - **Payment safety**: budget reservations under a mutex (safe at any concurrency), strict price/token/network/payTo check, single-use authorisations, no settlement unless the seller delivered valid output, schema checks on every response, and reputation that punishes junk.
 
@@ -109,10 +109,12 @@ ngrok's free tier shows a warning page to browsers on first visit; click "Visit 
 | shelf-scraper (scraping, 0.005) | `GET /sellers/shelf-scraper/scrape?page=1` |
 | fx-rates (data, 0.001) | `GET /sellers/fx-rates/rate?from=GBP&to=INR` |
 | hindi-summary (inference, 0.010, up to 2 texts) | `POST /sellers/hindi-summary/summarise` `{"texts":["..."]}` |
+| city-info (data, 0.002) | `GET /sellers/city-info/city?name=Tokyo` |
+| sentiment (inference, 0.003, up to 4 texts) | `POST /sellers/sentiment/analyse` `{"texts":["..."]}` |
 | cheap-scraper (demo: 402 asks 10x listed) | `GET /sellers/cheap-scraper/scrape?page=1` |
 | mirror-scraper (demo: 402 names another payTo) | `GET /sellers/mirror-scraper/scrape?page=1` |
 | junk-fx (demo: 200 with schema-breaking output) | `GET /sellers/junk-fx/rate?from=GBP&to=INR` |
-| Buyer: run a task | `POST /buyer/run` `{"task","budget","maxConcurrency"}` then `GET /buyer/runs/:id` |
+| Buyer: run a task | `POST /buyer/run` `{"task","budget","maxConcurrency","dryRun"?,"mode"?}` then `GET /buyer/runs/:id` |
 | Buyer: buy one call in a category (with failover) | `POST /buyer/buy` `{"category","input","budget"}` |
 | Buyer: pay one specific service | `POST /buyer/call` `{"serviceId","input","budget"}` |
 
@@ -120,28 +122,41 @@ ngrok's free tier shows a warning page to browsers on first visit; click "Visit 
 
 | Role | Address |
 |---|---|
-| Buyer (Scout) | `0x2A6150F67b500EC856ac6c7ccEC4473fc53Fe5Ed` |
+| Buyer (Scout) | `0x3f1fAbBCD001E71D43415E69D164a43B84B74ed0` |
 | shelf-scraper payTo | `0xf8ecD4f0048f3784F37A5C38f11DcD09CDB5dFa1` |
 | cheap-scraper payTo | `0xF003c65A3d0e5Be293DEef3bf1cF2e0816016105` |
 | fx-rates payTo | `0xa7bF4e3841a9CFd71B0159210aC977Bb9406Af80` |
 | hindi-summary payTo | `0xabB7577aAa2E36A7F1eFB455991e2f81B74B7E0A` |
+| city-info payTo | `0xdCc69091f2B0a92d8b54Ce15060b903c9256B8E2` |
+| sentiment payTo | `0x443afC02887D91C97900c609865E65F08C1dBfEd` |
 | junk-fx payTo | `0xFeF45Fd07E1E97174849548E8973944b674446B6` |
 | mirror-scraper listed payTo | `0x324B377aAfA1aAFC0b121d4A4703910c9591d47F` |
 | "attacker" payTo used by mirror-scraper's 402 | `0x5885c754a5Af918207d4A6161e558e25cE022D1D` |
 
 USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (6 decimals). Explorer: https://sepolia.basescan.org
 
-## Three example tasks (each uses scraping + data + inference)
+## Example tasks (each of the first three uses scraping + data + inference)
 
-1. `From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.` Budget 0.050.
-2. `From pages 2 to 3 of books.toscrape.com, find the two most expensive 1-star books, give their prices in euros, and summarise each description in Hindi.` Budget 0.030.
-3. `From pages 5 to 6 of books.toscrape.com, find the four cheapest books rated at least 4 stars, give their prices in yen, and summarise each description in Hindi.` Budget 0.040.
+1. `From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.` Budget 0.050 (costs 0.041: 4 scrapes, 1 FX rate, 2 batched summaries).
+2. `Check the weather in Tokyo, then give the two cheapest books on page 1 of books.toscrape.com in Tokyo's local currency, with a Hindi summary of each.` Budget 0.050 (city-info feeds its currency into fx-rates).
+3. `From pages 1 to 2 of books.toscrape.com, find the three cheapest 5-star books, give their prices in euros, and say whether each description sounds positive or negative.` Budget 0.050 (sentiment instead of Hindi).
+4. `What is the weather in Tokyo, and what is 100 GBP in the local currency there?` Budget 0.020 (data only: a two-step chain).
 
-Change any number (pages, count, star rating, currency, budget) on the spot. Numbers are parsed deterministically; the LLM only fills gaps. Summaries are batched 2 texts per call to save budget.
+Change any number (pages, count, star rating, currency, city, budget) on the spot.
 
 ```bash
 npm run task -- "From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi." 0.05 3
+npm run task -- "<task>" 0.05 3 --dry     # plan and quote only, pays nothing
+npm run task -- "<task>" 0.05 3 --legacy  # built-in books pipeline only, no LLM planning
 ```
+
+### How Scout works
+
+- **The LLM plans, code enforces.** Each turn the LLM sees the task, the budget left and a catalogue of services (sellers with the same category and schemas are shown as one interchangeable group). It answers with JSON: paid `calls`, free local `tools` (`select` to filter, sort, limit and compute fields, `calc` for arithmetic) or a `final` answer. Steps can use earlier results by reference (`$p1.books[0:2].description`), so long texts are never copied through the model, and steps inside one turn run in dependency order.
+- **Before any money moves**, every call is checked against the service's listed input schema; an invalid plan gets one repair message. Cost is estimated against the remaining budget, and calls that do not fit are skipped and reported (state `needs_more_budget`). Payments go through the same safety layer as ever (price check, budget reservations, wallet spend cap, unconfirmed handling).
+- **Failover.** A seller that refuses, returns junk or fails is skipped for the rest of the run and the next one in the group is tried.
+- **Dry run.** `dryRun` plans, validates and quotes with sample data and pays nothing.
+- **Fallback.** If the LLM is down or the plan stays invalid and nothing was bought, book-price tasks fall back to the built-in pipeline; any other task ends as `failed` with the reason. `SCOUT_MODE=legacy|agent|auto` (or `mode` in the API) forces a mode.
 
 ## Judge test pack
 
