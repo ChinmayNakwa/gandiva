@@ -37,9 +37,13 @@ CREATE TABLE IF NOT EXISTS ledger (
   asked TEXT,
   paid TEXT NOT NULL DEFAULT '0',
   tx_hash TEXT,
-  status TEXT NOT NULL CHECK (status IN ('paid','paid_output_rejected','refused','failed_not_charged')),
+  status TEXT NOT NULL,
   reason TEXT,
-  latency_ms INTEGER NOT NULL DEFAULT 0
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  auth_from TEXT,
+  auth_nonce TEXT,
+  valid_before INTEGER,
+  signed_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -70,3 +74,22 @@ CREATE TABLE IF NOT EXISTS runs (
   result TEXT
 );
 `);
+
+// Migrate databases created before the "unconfirmed" status: drop the old status CHECK and add the authorisation columns.
+const ledgerSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ledger'").get() as { sql: string }).sql;
+if (/CHECK\s*\(status IN/i.test(ledgerSql)) {
+  db.exec(`
+    BEGIN;
+    ALTER TABLE ledger RENAME TO ledger_old;
+    CREATE TABLE ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, run_id TEXT, buyer TEXT NOT NULL, seller TEXT NOT NULL,
+      service_id TEXT, service_name TEXT NOT NULL, endpoint TEXT NOT NULL, listed TEXT NOT NULL, asked TEXT,
+      paid TEXT NOT NULL DEFAULT '0', tx_hash TEXT, status TEXT NOT NULL, reason TEXT, latency_ms INTEGER NOT NULL DEFAULT 0,
+      auth_from TEXT, auth_nonce TEXT, valid_before INTEGER, signed_at INTEGER
+    );
+    INSERT INTO ledger (id,ts,run_id,buyer,seller,service_id,service_name,endpoint,listed,asked,paid,tx_hash,status,reason,latency_ms)
+      SELECT id,ts,run_id,buyer,seller,service_id,service_name,endpoint,listed,asked,paid,tx_hash,status,reason,latency_ms FROM ledger_old;
+    DROP TABLE ledger_old;
+    COMMIT;
+  `);
+}

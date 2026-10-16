@@ -1,9 +1,13 @@
+import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
-import { EXPLORER_TX, fromUnits } from "../config.js";
-import { deleteService, getService, listLedger, listSales, reputationFor, searchServices, upsertService } from "./store.js";
+import { config, EXPLORER_TX, fromUnits } from "../config.js";
+import { deleteService, getService, listLedger, listSales, RegistryError, registerExternal, reputationFor, searchServices } from "./store.js";
 
 export const registry = new Hono();
+
+const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 registry.get("/services", (c) => {
   const { category, maxPrice, sort } = c.req.query();
@@ -16,17 +20,26 @@ registry.get("/services/:id", (c) => {
   return c.json({ ...s, reputation: reputationFor(s.id) });
 });
 
-registry.post("/services", async (c) => {
-  try {
-    const body = await c.req.json();
-    return c.json(upsertService(body), 201);
-  } catch (err) {
-    if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
-    return c.json({ error: String(err) }, 400);
-  }
-});
+const MAX_LISTING_BYTES = 32 * 1024;
+
+registry.post(
+  "/services",
+  bodyLimit({ maxSize: MAX_LISTING_BYTES, onError: (c) => c.json({ error: `listing too large (max ${MAX_LISTING_BYTES} bytes)` }, 413) }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      return c.json(registerExternal(body), 201);
+    } catch (err) {
+      if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
+      if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);
+      return c.json({ error: "body must be valid JSON" }, 400);
+    }
+  },
+);
 
 registry.delete("/services/:id", (c) => {
+  if (!config.adminToken) return c.json({ error: "deleting listings is disabled (ADMIN_TOKEN is not set)" }, 403);
+  if (!safeEqual(c.req.header("x-admin-token") ?? "", config.adminToken)) return c.json({ error: "missing or wrong x-admin-token" }, 401);
   return deleteService(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "service not found" }, 404);
 });
 
@@ -41,7 +54,8 @@ registry.get("/ledger", (c) => {
   }));
   const charged = rows.filter((r) => r.status === "paid" || r.status === "paid_output_rejected");
   const totalPaid = charged.reduce((acc, r) => acc + BigInt(r.paid), 0n);
-  return c.json({ totalPaid: totalPaid.toString(), totalPaidUsdc: fromUnits(totalPaid), entries: rows });
+  const unconfirmed = rows.filter((r) => r.status === "unconfirmed");
+  return c.json({ totalPaid: totalPaid.toString(), totalPaidUsdc: fromUnits(totalPaid), unconfirmedCount: unconfirmed.length, entries: rows });
 });
 
 registry.get("/sales", (c) => {

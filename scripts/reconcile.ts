@@ -11,6 +11,17 @@ const client = createPublicClient({ chain: baseSepolia, transport: http(config.r
 const buyer = (process.argv[2] || privateKeyToAccount(config.buyerPrivateKey as `0x${string}`).address).toLowerCase();
 
 const { entries } = await api<{ entries: any[] }>("/registry/ledger");
+// An "unconfirmed" row is a payment whose outcome is not known yet. Reconciliation cannot be trusted while any exist:
+// the background resolver settles them from the chain within a minute or two, then re-run this script.
+const unconfirmed = entries.filter((e) => e.status === "unconfirmed" && e.buyer.toLowerCase() === buyer);
+if (unconfirmed.length) {
+  console.log(`buyer ${buyer}`);
+  console.log(`\nNOT RECONCILED: ${unconfirmed.length} ledger row(s) are still "unconfirmed" (payment signed, outcome unknown):`);
+  for (const e of unconfirmed) console.log(`  - #${e.id} ${e.service_name} asked ${e.asked} units, valid until ${e.valid_before ? new Date(e.valid_before * 1000).toISOString() : "?"}: ${e.reason}`);
+  console.log("The resolver checks the chain every 15 s and settles them once the authorisation is used or expired. Wait and re-run.");
+  process.exit(1);
+}
+
 const charged = entries.filter((e) => (e.status === "paid" || e.status === "paid_output_rejected") && e.buyer.toLowerCase() === buyer);
 let ledgerTotal = 0n;
 let verified = 0n;

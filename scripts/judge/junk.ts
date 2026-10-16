@@ -1,7 +1,7 @@
 // Junk output test: a standard-SDK reference seller returns 200 with output that breaks its listed schema.
 // Expect: recorded as "paid, output rejected", not used, reputation lowered, and the buyer buys from another seller.
 import "dotenv/config";
-import { api, BASE } from "../lib.js";
+import { api, removeListing } from "../lib.js";
 import { registerRef, startRefSeller } from "../interop/ref-seller.js";
 
 // Reputation is computed from the ledger per service id, so a fixed id would carry a low score from earlier
@@ -24,6 +24,6 @@ const junk = run.purchases.find((p: any) => p.serviceId === id);
 const good = run.purchases.find((p: any) => p.serviceId !== id && p.status === "paid");
 const pass = junk?.status === "paid_output_rejected" && !!good && run.result?.rate !== "high" && after.score < 1;
 ref.close();
-await fetch(`${BASE}/registry/services/${id}`, { method: "DELETE" });
+await removeListing(id);
 console.log(pass ? "\nJUNK OUTPUT TEST PASSED" : `\nJUNK OUTPUT TEST FAILED (if ${id} was not tried first, other data sellers outranked it)`);
 process.exit(pass ? 0 : 1);

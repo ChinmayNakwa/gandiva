@@ -8,6 +8,8 @@ import { llmAvailable } from "./llm.js";
 import { registry } from "./registry/routes.js";
 import { buildSellers, seedRegistry } from "./sellers/index.js";
 import { getResourceServer } from "./x402/resourceServer.js";
+import { startResolver } from "./x402/resolver.js";
+import { spendCap } from "./x402/spendCap.js";
 
 const app = new Hono();
 app.use("*", cors({ origin: "*", exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE"] }));
@@ -35,12 +37,14 @@ app.get("/api/info", async (c) => {
     sellers: active.map((s) => ({ id: s.id, payTo: s.payTo, endpoint: `${config.publicBaseUrl}/sellers/${s.id}${s.path}`, adversarial: !!s.adversarial })),
     llm: { host: config.ollama.host.replace(/\/\/.*@/, "//"), model: config.ollama.model, available: await llmAvailable() },
     buyerTokenRequired: Boolean(config.buyerToken),
+    spendCap: spendCap.status(),
   });
 });
 
 app.get("/healthz", (c) => c.json({ ok: true }));
 
 seedRegistry(active);
+startResolver();
 serve({ fetch: app.fetch, port: config.port }, () => {
   console.log(`Gandiva running on http://localhost:${config.port}  (public: ${config.publicBaseUrl})`);
   console.log(`  web        ${config.publicBaseUrl}/`);

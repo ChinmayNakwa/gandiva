@@ -5,7 +5,7 @@ import { MAX_PRICE_UNITS, NETWORK, USDC_ADDRESS } from "../config.js";
 export const CATEGORIES = ["data", "inference", "scraping"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-export const LEDGER_STATUSES = ["paid", "paid_output_rejected", "refused", "failed_not_charged"] as const;
+export const LEDGER_STATUSES = ["paid", "paid_output_rejected", "refused", "failed_not_charged", "unconfirmed"] as const;
 export type LedgerStatus = (typeof LEDGER_STATUSES)[number];
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "must be a 0x EVM address");
@@ -87,6 +87,33 @@ export function upsertService(input: ServiceInput): Service {
   return getService(id)!;
 }
 
+export const SEED_OWNER = "gandiva";
+export const MAX_EXTERNAL_SERVICES = 200;
+
+export class RegistryError extends Error {
+  constructor(message: string, readonly status: 403 | 409 = 409) {
+    super(message);
+  }
+}
+
+/**
+ * Public registration (judges list their own reference sellers). Anyone may add a listing, but only its original
+ * payTo may update it, and the seeded marketplace sellers can never be overwritten from outside.
+ */
+export function registerExternal(input: unknown): Service {
+  const s = serviceInput.parse({ ...(input as object), owner: "external" });
+  const id = s.id ?? slug(s.name);
+  const existing = getService(id);
+  if (existing) {
+    if (existing.owner === SEED_OWNER) throw new RegistryError(`"${id}" is a built-in marketplace service and cannot be overwritten; choose another id`, 403);
+    if (existing.payTo.toLowerCase() !== s.payTo.toLowerCase()) throw new RegistryError(`"${id}" is already listed by a different payTo; choose another id`);
+  } else {
+    const { n } = db.prepare("SELECT COUNT(*) AS n FROM services WHERE owner != ?").get(SEED_OWNER) as { n: number };
+    if (n >= MAX_EXTERNAL_SERVICES) throw new RegistryError(`registry is full (${MAX_EXTERNAL_SERVICES} external listings)`, 403);
+  }
+  return upsertService({ ...s, id });
+}
+
 export function deleteService(id: string) {
   return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
 }
@@ -106,7 +133,7 @@ const median = (xs: number[]) => {
 /** Reputation comes from the buyer-side ledger: every attempted call counts, only clean "paid" counts as success. */
 export function reputationFor(serviceId: string): Reputation {
   const rows = db
-    .prepare("SELECT status, latency_ms FROM ledger WHERE service_id = ? AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'payment rejected:%'))")
+    .prepare("SELECT status, latency_ms FROM ledger WHERE service_id = ? AND status != 'unconfirmed' AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'spend cap:%' AND reason NOT LIKE 'payment rejected:%'))")
     .all(serviceId) as { status: LedgerStatus; latency_ms: number }[];
   const successes = rows.filter((r) => r.status === "paid");
   const attempts = rows.length;
@@ -165,17 +192,54 @@ export interface LedgerEntry {
   status: LedgerStatus;
   reason?: string | null;
   latencyMs: number;
+  /** EIP-3009 authorisation that was signed; kept so an unconfirmed payment can be settled against the chain later. */
+  auth?: { from: string; nonce: string; validBefore: number; signedAt: number } | null;
 }
 
 export function addLedger(e: LedgerEntry) {
   const ts = new Date().toISOString();
   const info = db
     .prepare(
-      `INSERT INTO ledger (ts,run_id,buyer,seller,service_id,service_name,endpoint,listed,asked,paid,tx_hash,status,reason,latency_ms)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO ledger (ts,run_id,buyer,seller,service_id,service_name,endpoint,listed,asked,paid,tx_hash,status,reason,latency_ms,auth_from,auth_nonce,valid_before,signed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(ts, e.runId ?? null, e.buyer, e.seller, e.serviceId ?? null, e.serviceName, e.endpoint, e.listed, e.asked ?? null, e.paid, e.txHash ?? null, e.status, e.reason ?? null, Math.round(e.latencyMs));
+    .run(
+      ts, e.runId ?? null, e.buyer, e.seller, e.serviceId ?? null, e.serviceName, e.endpoint, e.listed, e.asked ?? null, e.paid, e.txHash ?? null, e.status, e.reason ?? null, Math.round(e.latencyMs),
+      e.auth?.from ?? null, e.auth?.nonce ?? null, e.auth?.validBefore ?? null, e.auth?.signedAt ?? null,
+    );
   return { id: Number(info.lastInsertRowid), ts, ...e };
+}
+
+/**
+ * Settle a row once the chain has answered. Normally that is an "unconfirmed" row; a "failed_not_charged" row can also be
+ * corrected (`from`) if the seller turns out to have settled the authorisation late.
+ */
+export function resolveLedger(
+  id: number,
+  r: { status: LedgerStatus; paid: string; txHash?: string | null; reason: string },
+  from: LedgerStatus[] = ["unconfirmed"],
+) {
+  const marks = from.map(() => "?").join(",");
+  return db.prepare(`UPDATE ledger SET status = ?, paid = ?, tx_hash = ?, reason = ? WHERE id = ? AND status IN (${marks})`).run(r.status, r.paid, r.txHash ?? null, r.reason, id, ...from).changes > 0;
+}
+
+export function listUnconfirmed() {
+  return db.prepare("SELECT * FROM ledger WHERE status = 'unconfirmed' ORDER BY id").all() as any[];
+}
+
+/** Rows we recorded as "not charged" after signing, whose authorisation could still be settled by the seller (until validBefore). */
+export function listAuditable(nowSeconds: number, graceSeconds = 90) {
+  return db
+    .prepare("SELECT * FROM ledger WHERE status = 'failed_not_charged' AND auth_nonce IS NOT NULL AND valid_before >= ? ORDER BY id")
+    .all(nowSeconds - graceSeconds) as any[];
+}
+
+/** Money the buyer has spent or may have spent since `sinceIso`: charged rows plus unconfirmed ones at the amount they asked. */
+export function spentSince(sinceIso: string): bigint {
+  const rows = db
+    .prepare("SELECT status, paid, asked FROM ledger WHERE ts >= ? AND status IN ('paid','paid_output_rejected','unconfirmed')")
+    .all(sinceIso) as { status: LedgerStatus; paid: string; asked: string | null }[];
+  return rows.reduce((sum, r) => sum + BigInt(r.status === "unconfirmed" ? (r.asked ?? "0") : r.paid), 0n);
 }
 
 export function listLedger(q: { runId?: string; limit?: number } = {}) {

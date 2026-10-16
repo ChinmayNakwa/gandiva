@@ -43,7 +43,7 @@ buyer.post("/call", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.serviceId) return c.json({ error: "serviceId is required" }, 400);
   try {
-    return c.json(await buyOnce({ serviceId: body.serviceId, input: body.input ?? {}, budget: String(body.budget ?? "0.1") }));
+    return c.json(await buyOnce({ serviceId: body.serviceId, input: body.input ?? {}, budget: String(body.budget ?? "0.1"), timeoutMs: Number(body.timeoutMs) || undefined }));
   } catch (err: any) {
     return c.json({ error: err?.message ?? String(err) }, 400);
   }

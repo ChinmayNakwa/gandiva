@@ -4,9 +4,10 @@ import type { PaymentRequired, PaymentRequirements, SettleResponse } from "@x402
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { fromUnits, NETWORK } from "../config.js";
-import { addLedger, type LedgerStatus, type Service } from "../registry/store.js";
+import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
 import type { BudgetLedger } from "./budget.js";
 import { validate } from "./schema.js";
+import { spendCap, type CapReservation } from "./spendCap.js";
 
 export interface CallResult {
   status: LedgerStatus;
@@ -93,10 +94,17 @@ export class SafePayer {
     const started = Date.now();
     const timeoutMs = ctx.timeoutMs ?? 90_000;
     const base = { runId: ctx.runId, buyer: this.address, seller: service.payTo, serviceId: service.id, serviceName: service.name, endpoint: service.endpoint, listed: service.price };
+    let auth: LedgerEntry["auth"] = null;
+    let capHold: CapReservation | null = null;
     const finish = (r: Omit<CallResult, "latencyMs" | "ledgerId" | "ok">): CallResult => {
       const latencyMs = Date.now() - started;
-      const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs });
-      return { ...r, ok: r.status === "paid", latencyMs, ledgerId: row.id };
+      try {
+        const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs, auth });
+        return { ...r, ok: r.status === "paid", latencyMs, ledgerId: row.id };
+      } finally {
+        // Only now does the ledger carry this payment, so only now can the wallet cap stop counting it as in flight.
+        capHold?.release();
+      }
     };
 
     const { url, init } = buildRequest(service, input);
@@ -136,18 +144,35 @@ export class SafePayer {
       });
     }
 
+    capHold = await spendCap.reserve(asked);
+    if (!capHold) {
+      reservation.release();
+      const s = spendCap.status();
+      return finish({ status: "refused", paid: 0n, asked, reason: `spend cap: wallet limit ${s.limitUsdc} USDC per ${s.windowMinutes} min reached (${s.usedUsdc} used); needs ${fromUnits(asked)}` });
+    }
+
     let paidRes: Response;
+    let payload: Awaited<ReturnType<x402Client["createPaymentPayload"]>>;
     try {
-      const payload = await this.client.createPaymentPayload({ ...pr, accepts: [check.accept] });
+      payload = await this.client.createPaymentPayload({ ...pr, accepts: [check.accept] });
+    } catch (err: any) {
+      // Nothing was signed, so nothing can have moved.
+      reservation.release();
+      return finish({ status: "failed_not_charged", paid: 0n, asked, reason: `could not sign the payment: ${err?.message ?? err}` });
+    }
+    const a = (payload.payload as any)?.authorization;
+    if (a?.from && a?.nonce && a?.validBefore) auth = { from: String(a.from), nonce: String(a.nonce), validBefore: Number(a.validBefore), signedAt: Math.floor(Date.now() / 1000) };
+    try {
       paidRes = await fetch(url, {
         ...init,
         headers: { ...init.headers, "PAYMENT-SIGNATURE": encodePaymentSignatureHeader(payload) },
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err: any) {
-      // A timeout after sending the signature is ambiguous; keep the money reserved so the budget stays safe.
+      // The signature left our hands and we never saw the answer: the seller may have settled. Keep the money reserved and
+      // let the chain decide (resolver); do not claim "not charged" without proof.
       reservation.commit();
-      return finish({ status: "failed_not_charged", paid: 0n, asked, reason: `request failed after signing (reservation kept for safety): ${err?.message ?? err}` });
+      return finish({ status: "unconfirmed", paid: 0n, asked, reason: `no answer after signing, outcome pending chain check: ${err?.message ?? err}` });
     }
 
     let settle: SettleResponse | undefined;
@@ -158,7 +183,18 @@ export class SafePayer {
       } catch {}
     }
     const charged = Boolean(settle?.success);
-    const body = await readBody(paidRes);
+    let body: any;
+    try {
+      body = await readBody(paidRes);
+    } catch (err: any) {
+      // Headers arrived but the body did not (timeout / dropped connection): same ambiguity as a missing answer.
+      if (charged) {
+        reservation.commit();
+        return finish({ status: "paid_output_rejected", paid: asked, asked, txHash: settle!.transaction, reason: `seller settled but the response body was lost: ${err?.message ?? err}` });
+      }
+      reservation.commit();
+      return finish({ status: "unconfirmed", paid: 0n, asked, reason: `response body lost after signing, outcome pending chain check: ${err?.message ?? err}` });
+    }
 
     if (!paidRes.ok) {
       if (charged) {
@@ -179,17 +215,15 @@ export class SafePayer {
     }
 
     reservation.commit();
+    if (!charged) {
+      // A 200 with no (or unsuccessful) PAYMENT-RESPONSE proves nothing about settlement. Never record a payment we cannot
+      // show a tx for: park it as unconfirmed (budget stays spent) and let the chain say whether it was paid.
+      return finish({ status: "unconfirmed", paid: 0n, asked, data: body, reason: "200 without a successful PAYMENT-RESPONSE; settlement pending chain check" });
+    }
     const out = validate(service.outputSchema, body);
     if (!out.ok) {
       return finish({ status: "paid_output_rejected", paid: asked, asked, txHash: settle?.transaction, reason: `output breaks listed schema: ${out.error}` });
     }
-    return finish({
-      status: "paid",
-      paid: asked,
-      asked,
-      data: body,
-      txHash: settle?.transaction,
-      reason: charged ? undefined : "200 without PAYMENT-RESPONSE header; counted as paid for budget safety",
-    });
+    return finish({ status: "paid", paid: asked, asked, data: body, txHash: settle?.transaction });
   }
 }

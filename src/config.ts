@@ -19,6 +19,12 @@ export const config = {
   rpcUrl: env("BASE_SEPOLIA_RPC", "https://sepolia.base.org"),
   buyerPrivateKey: env("BUYER_PRIVATE_KEY") as `0x${string}` | "",
   buyerToken: env("BUYER_TOKEN"),
+  adminToken: env("ADMIN_TOKEN"),
+  // Wallet-wide spend cap across all runs; SPEND_CAP_USDC=0 turns it off.
+  spendCap: {
+    limit: toUnits(env("SPEND_CAP_USDC", "0.5")),
+    windowMs: Number(env("SPEND_CAP_WINDOW_MIN", "60")) * 60_000,
+  },
   seedAdversarial: env("SEED_ADVERSARIAL", "true") !== "false",
   ollama: {
     host: env("OLLAMA_HOST", "http://127.0.0.1:11434").replace(/\/$/, ""),
@@ -36,10 +42,11 @@ export const config = {
   },
 };
 
-export const toUnits = (usdc: number | string): bigint => {
+// A function declaration (not a const) so `config` above can use it while the module is still evaluating.
+export function toUnits(usdc: number | string): bigint {
   const [whole, frac = ""] = String(usdc).split(".");
   return BigInt(whole || "0") * 10n ** BigInt(USDC_DECIMALS) + BigInt((frac + "000000").slice(0, USDC_DECIMALS) || "0");
-};
+}
 
 export const fromUnits = (units: bigint | string | number): string => {
   const u = BigInt(units);

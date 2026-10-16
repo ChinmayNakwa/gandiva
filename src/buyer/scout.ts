@@ -122,6 +122,11 @@ async function buy(ctx: Ctx, category: Category, step: string, input: Record<str
       budgetBlocked = true;
       continue;
     }
+    if (r.reason?.startsWith("spend cap:")) {
+      ctx.log(`${step}: the buyer wallet's spend cap is reached; stopping purchases (${s.name} is not at fault)`);
+      return {};
+    }
+    if (r.status === "unconfirmed") ctx.log(`${step}: ${s.name} payment outcome unknown; budget stays reserved until the chain confirms it`);
     if (r.reason?.startsWith("payment rejected:")) {
       ctx.log(`${step}: our payment was rejected (check the buyer's USDC balance); not blaming ${s.name}`);
       return {};
@@ -272,7 +277,7 @@ function explain(run: RunState, plan: TaskPlan): string {
   );
   lines.push(`Outcome: ${run.state}. Spent ${usd(run.spent ?? "0")} of ${usd(run.budget)} USDC across ${paid.length} paid call(s); ${usd(run.remaining ?? run.budget)} USDC left.`);
   for (const p of run.purchases) {
-    const money = p.status === "paid" || p.status === "paid_output_rejected" ? `paid ${usd(p.paid)} USDC (tx ${p.txHash ?? "n/a"})` : "paid nothing";
+    const money = p.status === "paid" || p.status === "paid_output_rejected" ? `paid ${usd(p.paid)} USDC (tx ${p.txHash ?? "n/a"})` : p.status === "unconfirmed" ? `payment unconfirmed (up to ${usd(p.asked ?? p.listed)} USDC, counted against the budget until the chain settles it)` : "paid nothing";
     lines.push(`- ${p.step}: ${p.service} [${p.status}] ${money}. Why: ${p.why}.${p.reason ? ` Note: ${p.reason}.` : ""}`);
   }
   if (plan.summarise) lines.push(`Summaries were batched 2 texts per call (${Math.ceil(plan.limit / 2)} call(s) instead of ${plan.limit}) to save budget.`);
@@ -303,10 +308,12 @@ export async function buyCategory(opts: { category: Category; input: Record<stri
 }
 
 /** Direct paid call to any registry service (used by judge tests and interop with external sellers). */
-export async function buyOnce(opts: { serviceId: string; input: Record<string, unknown>; budget: string }) {
+export async function buyOnce(opts: { serviceId: string; input: Record<string, unknown>; budget: string; timeoutMs?: number }) {
   const service = getService(opts.serviceId);
   if (!service) throw new Error(`service ${opts.serviceId} not found`);
   const budget = new BudgetLedger(toUnits(opts.budget));
-  const r = await getPayer().call(service, opts.input, { budget, runId: `direct-${randomUUID().slice(0, 6)}` });
+  // A short timeout lets tests provoke "no answer after signing"; clamp so a caller cannot disable the safety net.
+  const timeoutMs = opts.timeoutMs ? Math.min(Math.max(opts.timeoutMs, 1_000), 90_000) : undefined;
+  const r = await getPayer().call(service, opts.input, { budget, runId: `direct-${randomUUID().slice(0, 6)}`, timeoutMs });
   return { ...r, paid: r.paid.toString(), asked: r.asked?.toString(), explorer: r.txHash ? EXPLORER_TX + r.txHash : undefined };
 }

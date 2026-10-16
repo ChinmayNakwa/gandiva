@@ -3,7 +3,7 @@
 //  B) listed with payTo X but its 402 names payTo Y
 // Expect our buyer to refuse both and pay nothing.
 import "dotenv/config";
-import { api } from "../lib.js";
+import { api, removeListing } from "../lib.js";
 import { registerRef, startRefSeller } from "../interop/ref-seller.js";
 
 const listedPayTo = process.env.PAYTO_FX_RATES!;
@@ -23,6 +23,6 @@ for (const id of ["ref-overpriced", "ref-wrong-payto"]) {
 }
 a.close();
 b.close();
-for (const id of ["ref-overpriced", "ref-wrong-payto"]) await fetch(`${process.env.GANDIVA_URL || "http://localhost:4021"}/registry/services/${id}`, { method: "DELETE" });
+for (const id of ["ref-overpriced", "ref-wrong-payto"]) await removeListing(id);
 console.log(pass ? "\nPRICE CHECK TEST PASSED" : "\nPRICE CHECK TEST FAILED");
 process.exit(pass ? 0 : 1);

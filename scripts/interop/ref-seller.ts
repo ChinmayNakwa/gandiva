@@ -17,6 +17,10 @@ export interface RefSellerOptions {
   payTo: string;
   /** Return schema-breaking output with status 200 */
   junk?: boolean;
+  /** Hold the response this long after the payment is verified (the SDK settles when the handler finishes). */
+  delayMs?: number;
+  /** With delayMs: answer 500 after the delay, so the SDK never settles and the authorisation stays unused. */
+  failAfterDelay?: boolean;
 }
 
 export async function startRefSeller(o: RefSellerOptions): Promise<{ url: string; close: () => void }> {
@@ -35,7 +39,9 @@ export async function startRefSeller(o: RefSellerOptions): Promise<{ url: string
       server,
     ),
   );
-  app.get("/rate", (req, res) => {
+  app.get("/rate", async (req, res) => {
+    if (o.delayMs) await new Promise((r) => setTimeout(r, o.delayMs));
+    if (o.failAfterDelay) return void res.status(500).json({ error: "reference seller failed after the delay" });
     if (o.junk) return void res.json({ oops: "not a rate", rate: "high" });
     res.json({ from: String(req.query.from ?? "GBP").toUpperCase(), to: String(req.query.to ?? "INR").toUpperCase(), rate: 111.11, date: new Date().toISOString().slice(0, 10), source: "reference" });
   });

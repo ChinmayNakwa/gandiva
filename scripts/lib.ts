@@ -11,6 +11,12 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   return j as T;
 }
 
+/** Best-effort cleanup of a test listing. Deleting needs ADMIN_TOKEN on the server; without it the listing just stays (re-registering with the same payTo still works). */
+export async function removeListing(id: string) {
+  if (!process.env.ADMIN_TOKEN) return;
+  await fetch(`${BASE}/registry/services/${id}`, { method: "DELETE", headers: { "x-admin-token": process.env.ADMIN_TOKEN } }).catch(() => {});
+}
+
 export async function runTask(task: string, budget: string, maxConcurrency: number, quiet = false) {
   const { runId } = await api("/buyer/run", { task, budget, maxConcurrency });
   let seen = 0;
