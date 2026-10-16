@@ -1,12 +1,14 @@
-// One command: opens a public HTTPS tunnel, then starts the server with that URL so every registry listing
-// and 402 resource URL is publicly reachable.
+// One command: opens a public HTTPS tunnel pointed at the Next.js front door, then starts
+// BOTH the Hono API (internal) and Next.js (public) with that URL, so every registry listing
+// and 402 resource URL is publicly reachable through the Next proxy.
 // TUNNEL=auto (default: cloudflared, then ngrok) | cloudflared | ngrok | none. A preset PUBLIC_BASE_URL skips tunnelling.
 import "dotenv/config";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-const port = process.env.PORT || "4021";
+const apiPort = process.env.API_PORT || process.env.PORT || "4021";
+const webPort = process.env.WEB_PORT || "3000";
 const exe = process.platform === "win32" ? ".exe" : "";
 const local = (name: string) => process.env[`${name.toUpperCase()}_PATH`] || resolve("tools", name + exe);
 const bin = (name: string) => (existsSync(local(name)) ? local(name) : name);
@@ -15,11 +17,22 @@ const useShell = (name: string) => !existsSync(local(name));
 const has = (name: string) => spawnSync(bin(name), ["--version"], { stdio: "ignore", shell: useShell(name) }).status === 0;
 const children: ChildProcess[] = [];
 
-function startServer(publicBaseUrl?: string) {
-  const env = { ...process.env, ...(publicBaseUrl ? { PUBLIC_BASE_URL: publicBaseUrl } : {}) };
-  const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], { stdio: "inherit", env });
+function register(child: ChildProcess) {
   children.push(child);
   child.on("exit", (code) => shutdown(code ?? 0));
+}
+
+// Hono API: internal only, but it needs PUBLIC_BASE_URL so the seller/registry URLs it emits point at the front door.
+function startApi(publicBaseUrl: string) {
+  const env = { ...process.env, PORT: apiPort, PUBLIC_BASE_URL: publicBaseUrl };
+  register(spawn(process.execPath, ["--import", "tsx", "src/server.ts"], { stdio: "inherit", env }));
+}
+
+// Next.js front door: the public port and the tunnel target. It proxies /registry, /buyer, /sellers, /api to the API.
+function startWeb(publicBaseUrl: string) {
+  const env = { ...process.env, PORT: webPort, API_URL: `http://localhost:${apiPort}`, PUBLIC_BASE_URL: publicBaseUrl };
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  register(spawn(npm, ["--prefix", "client", "run", "dev"], { stdio: "inherit", env, shell: useShell(npm) }));
 }
 
 function shutdown(code = 0) {
@@ -34,8 +47,8 @@ function openTunnel(kind: "cloudflared" | "ngrok"): Promise<string | null> {
   return new Promise((resolve) => {
     const args =
       kind === "cloudflared"
-        ? ["tunnel", "--no-autoupdate", "--url", `http://localhost:${port}`]
-        : ["http", port, "--log", "stdout", "--log-format", "logfmt", ...(process.env.NGROK_DOMAIN ? ["--url", process.env.NGROK_DOMAIN] : [])];
+        ? ["tunnel", "--no-autoupdate", "--url", `http://localhost:${webPort}`]
+        : ["http", webPort, "--log", "stdout", "--log-format", "logfmt", ...(process.env.NGROK_DOMAIN ? ["--url", process.env.NGROK_DOMAIN] : [])];
     const child = spawn(bin(kind), args, { shell: useShell(kind) });
     children.push(child);
     let url: string | null = null;
@@ -72,24 +85,30 @@ function openTunnel(kind: "cloudflared" | "ngrok"): Promise<string | null> {
 }
 
 const mode = (process.env.TUNNEL || "auto").toLowerCase();
-if (process.env.PUBLIC_BASE_URL) {
-  console.log(`Using PUBLIC_BASE_URL=${process.env.PUBLIC_BASE_URL}`);
-  startServer();
-} else if (mode === "none") {
-  startServer();
-} else {
+const preset = process.env.PUBLIC_BASE_URL?.trim();
+
+let publicUrl = preset || "";
+if (!preset && mode !== "none") {
   const order = (mode === "auto" ? ["cloudflared", "ngrok"] : [mode]) as ("cloudflared" | "ngrok")[];
-  let url: string | null = null;
   for (const kind of order) {
     if (!has(kind)) {
       console.warn(`${kind} not found (install it or put the binary in tools/)`);
       continue;
     }
     console.log(`Opening ${kind} tunnel...`);
-    url = await openTunnel(kind);
-    if (url) break;
+    const url = await openTunnel(kind);
+    if (url) {
+      publicUrl = url;
+      break;
+    }
   }
-  if (url) console.log(`Public URL: ${url}`);
-  else console.warn("No public tunnel; starting locally only. Set PUBLIC_BASE_URL or TUNNEL to fix.");
-  startServer(url ?? undefined);
 }
+
+if (publicUrl) console.log(`Public URL: ${publicUrl}  (Next.js front door on :${webPort}, API on :${apiPort})`);
+else {
+  publicUrl = `http://localhost:${webPort}`;
+  console.warn(`No public tunnel; using ${publicUrl}. Set PUBLIC_BASE_URL or TUNNEL to change.`);
+}
+
+startApi(publicUrl);
+startWeb(publicUrl);
