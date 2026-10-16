@@ -53,11 +53,18 @@ export function ServiceCard({
 
           <div className="flex flex-col gap-1">
             <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>reputation</span>
+              <span className="flex items-center gap-1.5">
+                reputation
+                {rep.isNew ? (
+                  <span className="rounded bg-primary/15 px-1 font-mono text-[10px] uppercase text-primary">
+                    new
+                  </span>
+                ) : null}
+              </span>
               <span className="font-mono">
                 {rep.attempts
                   ? `${pct(rep.successRate)} success · ${rep.successes}/${rep.attempts}`
-                  : "new · no calls yet"}
+                  : "no calls yet"}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">

@@ -25,6 +25,11 @@ export const config = {
     limit: toUnits(env("SPEND_CAP_USDC", "0.5")),
     windowMs: Number(env("SPEND_CAP_WINDOW_MIN", "60")) * 60_000,
   },
+  // Reputation: a call's weight halves every REPUTATION_HALF_LIFE_HOURS; fewer than REPUTATION_NEW_ATTEMPTS calls = "new".
+  reputation: {
+    halfLifeMs: Number(env("REPUTATION_HALF_LIFE_HOURS", "6")) * 3_600_000,
+    newAttempts: Number(env("REPUTATION_NEW_ATTEMPTS", "3")),
+  },
   seedAdversarial: env("SEED_ADVERSARIAL", "true") !== "false",
   ollama: {
     host: env("OLLAMA_HOST", "http://127.0.0.1:11434").replace(/\/$/, ""),

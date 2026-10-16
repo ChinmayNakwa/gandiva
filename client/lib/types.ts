@@ -13,6 +13,7 @@ export interface Reputation {
   successRate: number;
   medianLatencyMs: number | null;
   score: number;
+  isNew: boolean;
 }
 
 export interface Service {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "../db.js";
-import { MAX_PRICE_UNITS, NETWORK, USDC_ADDRESS } from "../config.js";
+import { config, MAX_PRICE_UNITS, NETWORK, USDC_ADDRESS } from "../config.js";
 
 export const CATEGORIES = ["data", "inference", "scraping"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -51,7 +51,10 @@ export interface Reputation {
   successes: number;
   successRate: number;
   medianLatencyMs: number | null;
+  /** Time-weighted score in (0, 1]; see computeReputation. */
   score: number;
+  /** Too few calls to judge yet. */
+  isNew: boolean;
 }
 
 export type ServiceWithReputation = Service & { reputation: Reputation };
@@ -130,21 +133,44 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 
-/** Reputation comes from the buyer-side ledger: every attempted call counts, only clean "paid" counts as success. */
-export function reputationFor(serviceId: string): Reputation {
-  const rows = db
-    .prepare("SELECT status, latency_ms FROM ledger WHERE service_id = ? AND status != 'unconfirmed' AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'spend cap:%' AND reason NOT LIKE 'payment rejected:%'))")
-    .all(serviceId) as { status: LedgerStatus; latency_ms: number }[];
+/**
+ * Turns ledger rows into a reputation. The score is time-weighted: a call's weight halves every half-life, so a seller
+ * that misbehaved long ago slowly earns its way back, while a fresh failure counts fully. attempts/successes/successRate
+ * stay plain counts for display.
+ */
+export function computeReputation(
+  rows: { status: LedgerStatus; latency_ms: number; ts: string }[],
+  now = Date.now(),
+  halfLifeMs = config.reputation.halfLifeMs,
+  newAttempts = config.reputation.newAttempts,
+): Reputation {
   const successes = rows.filter((r) => r.status === "paid");
   const attempts = rows.length;
+  let weightedAttempts = 0;
+  let weightedSuccesses = 0;
+  for (const r of rows) {
+    const age = Math.max(0, now - Date.parse(r.ts));
+    const w = halfLifeMs > 0 ? 0.5 ** (age / halfLifeMs) : 1;
+    weightedAttempts += w;
+    if (r.status === "paid") weightedSuccesses += w;
+  }
   return {
     attempts,
     successes: successes.length,
     successRate: attempts ? successes.length / attempts : 0,
     medianLatencyMs: median(successes.map((r) => r.latency_ms)),
-    // Optimistic prior: an untried seller scores 1.0 so it gets explored; one bad call halves it
-    score: (successes.length + 1) / (attempts + 1),
+    // Optimistic prior: an untried seller scores 1.0 so it gets explored; one fresh bad call halves it
+    score: (weightedSuccesses + 1) / (weightedAttempts + 1),
+    isNew: attempts < newAttempts,
   };
+}
+
+/** Reputation comes from the buyer-side ledger: every attempted call counts, only clean "paid" counts as success. */
+export function reputationFor(serviceId: string): Reputation {
+  const rows = db
+    .prepare("SELECT status, latency_ms, ts FROM ledger WHERE service_id = ? AND status != 'unconfirmed' AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'spend cap:%' AND reason NOT LIKE 'payment rejected:%'))")
+    .all(serviceId) as { status: LedgerStatus; latency_ms: number; ts: string }[];
+  return computeReputation(rows);
 }
 
 export function searchServices(q: { category?: string; maxPrice?: string; sort?: string } = {}): ServiceWithReputation[] {
