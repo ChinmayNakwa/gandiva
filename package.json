@@ -21,6 +21,7 @@
     "judge:budget": "tsx scripts/judge/budget.ts",
     "judge:failure": "tsx scripts/judge/seller-failure.ts",
     "judge:junk": "tsx scripts/judge/junk.ts",
+    "judge:chain": "tsx scripts/judge/chain.ts",
     "judge:unconfirmed": "tsx scripts/judge/unconfirmed.ts",
     "judge:interop": "tsx scripts/judge/interop-seller.ts",
     "interop:ref-seller": "tsx scripts/interop/ref-seller.ts",

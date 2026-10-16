@@ -8,6 +8,8 @@ import { scrapeCataloguePage } from "./books.js";
 import { forwardTo } from "./proxy.js";
 import { cityInfo, cityInput, cityOutput } from "./city.js";
 import { getRate } from "./fx.js";
+import { BRIEF_ID, briefDescription, briefInput, briefOutput, briefUnavailable, travelBrief } from "./brief.js";
+import { fxInput, fxOutput, summariseInput, summariseOutput } from "./schemas.js";
 import { analyseSentiment, sentimentInput, sentimentOutput } from "./sentiment.js";
 
 const scrapeInput = {
@@ -39,49 +41,6 @@ const scrapeOutput = {
     },
   },
 };
-const fxInput = {
-  type: "object",
-  properties: {
-    from: { type: "string", pattern: "^[A-Za-z]{3}$" },
-    to: { type: "string", pattern: "^[A-Za-z]{3}$" },
-  },
-  required: ["from", "to"],
-  additionalProperties: false,
-};
-const fxOutput = {
-  type: "object",
-  required: ["from", "to", "rate", "date"],
-  properties: {
-    from: { type: "string" },
-    to: { type: "string" },
-    rate: { type: "number", exclusiveMinimum: 0 },
-    date: { type: "string" },
-    source: { type: "string" },
-  },
-};
-const summariseInput = {
-  type: "object",
-  properties: {
-    texts: { type: "array", minItems: 1, maxItems: 2, items: { type: "string", minLength: 1, maxLength: 6000 } },
-  },
-  required: ["texts"],
-  additionalProperties: false,
-};
-const summariseOutput = {
-  type: "object",
-  required: ["language", "summaries"],
-  properties: {
-    language: { const: "hi" },
-    model: { type: "string" },
-    summaries: {
-      type: "array",
-      minItems: 1,
-      maxItems: 2,
-      items: { type: "object", required: ["summary"], properties: { summary: { type: "string", minLength: 1, pattern: "[\\u0900-\\u097F]" } } },
-    },
-  },
-};
-
 async function scrape(input: { page: number }) {
   const books = await scrapeCataloguePage(Number(input.page));
   return { page: Number(input.page), source: "books.toscrape.com", books };
@@ -124,6 +83,10 @@ interface SellerDef {
   description: string;
   adversarial?: boolean;
   selfValidate?: boolean;
+  /** Must run inside the main server (it uses the shared ledger and registry), never as a SELLER_PROCESSES child. */
+  inProcess?: boolean;
+  /** Why this seller cannot run right now (a missing wallet), or undefined. */
+  unavailable?: () => string | undefined;
   handler: (input: any) => Promise<any>;
 }
 
@@ -240,6 +203,21 @@ export function sellerDefs(): SellerDef[] {
       description: "Sentiment of up to 4 short texts per call (positive, neutral or negative with a 0-1 confidence and a one-line reason), using an LLM.",
       handler: analyseSentiment,
     },
+    {
+      id: BRIEF_ID,
+      name: BRIEF_ID,
+      category: "inference",
+      path: "/brief",
+      method: "POST",
+      listedPrice: 20000n,
+      payTo: p.travelBrief,
+      inputSchema: briefInput,
+      outputSchema: briefOutput,
+      description: briefDescription,
+      inProcess: true,
+      unavailable: briefUnavailable,
+      handler: travelBrief,
+    },
   ];
 }
 
@@ -251,6 +229,11 @@ export function activeSellerDefs(): SellerDef[] {
   for (const def of sellerDefs()) {
     if (def.adversarial && !config.seedAdversarial) continue;
     const payTo402 = def.payToIn402 ?? def.payTo;
+    const unavailable = def.unavailable?.();
+    if (unavailable) {
+      console.warn(`[sellers] skipping ${def.id}: ${unavailable}`);
+      continue;
+    }
     if (!isAddress(def.payTo) || !isAddress(payTo402)) {
       console.warn(`[sellers] skipping ${def.id}: payTo address not configured (run npm run wallets:new)`);
       continue;

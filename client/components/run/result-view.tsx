@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TxLink } from "@/components/tx-link";
 import { usdc, stars } from "@/lib/format";
 import {
   isAgentResult,
@@ -32,6 +33,8 @@ const label = (key: string) => key.replace(/_/g, " ");
 
 function Scalar({ value }: { value: unknown }) {
   if (value === null || value === undefined) return <span>—</span>;
+  // A transaction hash (for example from an agent that paid other sellers) links to the block explorer.
+  if (typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value)) return <TxLink hash={value} />;
   if (typeof value === "string" && /^https?:\/\//.test(value)) {
     return (
       <a

@@ -17,7 +17,7 @@ export interface ServiceGroup {
   maxPrice: bigint;
 }
 
-const canonical = (v: unknown): string =>
+export const canonical = (v: unknown): string =>
   Array.isArray(v)
     ? `[${v.map(canonical).join(",")}]`
     : v && typeof v === "object"

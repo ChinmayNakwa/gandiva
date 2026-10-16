@@ -1,11 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
+import { LinkIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CategoryBadge } from "@/components/status-badge";
 import { AddrLink } from "@/components/tx-link";
-import { ADVERSARIAL_IDS, pct, usdc } from "@/lib/format";
+import { ADVERSARIAL_IDS, CHAIN_IDS, pct, usdc } from "@/lib/format";
 import type { Service } from "@/lib/types";
 
 export function ServiceCard({
@@ -108,6 +108,13 @@ export function ServiceCard({
             >
               <ShieldCheckIcon className="size-3 text-primary" />
               402 checked against the listing
+            </div>
+          ) : null}
+
+          {CHAIN_IDS.has(service.id) ? (
+            <div className="flex items-start gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary">
+              <LinkIcon className="mt-0.5 size-3 shrink-0" />
+              <span>agent chain — pays other sellers (weather, FX, Hindi) from its own wallet to do the job</span>
             </div>
           ) : null}
 

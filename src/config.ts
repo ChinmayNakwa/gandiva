@@ -59,7 +59,10 @@ export const config = {
     junkFx: env("PAYTO_JUNK_FX"),
     mirrorScraper: env("PAYTO_MIRROR_SCRAPER"),
     attacker: env("PAYTO_ATTACKER"),
+    travelBrief: env("PAYTO_TRAVEL_BRIEF"),
   },
+  // The agent-chain seller pays the sellers it hires from this wallet (testnet only).
+  travelBriefKey: env("TRAVEL_BRIEF_KEY") as `0x${string}` | "",
 };
 
 // A function declaration (not a const) so `config` above can use it while the module is still evaluating.

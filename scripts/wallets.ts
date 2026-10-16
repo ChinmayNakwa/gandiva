@@ -24,8 +24,15 @@ for (const s of sellers) {
   rows.push([s.toLowerCase().replace(/_/g, "-"), addr]);
 }
 
+// The agent-chain seller pays other sellers, so its key is loaded by the server (unlike the receive-only seller keys above).
+if (!get("TRAVEL_BRIEF_KEY")) set("TRAVEL_BRIEF_KEY", generatePrivateKey());
+const briefAddr = privateKeyToAccount(get("TRAVEL_BRIEF_KEY") as `0x${string}`).address;
+set("PAYTO_TRAVEL_BRIEF", briefAddr);
+rows.push(["travel-brief", briefAddr]);
+
 writeFileSync(ENV, text);
 console.log("Testnet wallets (Base Sepolia). Keys are in .env, which is gitignored.\n");
 for (const [name, addr] of rows) console.log(`  ${name.padEnd(16)} ${addr}`);
 console.log(`\nFund the buyer with testnet USDC: https://faucet.circle.com  (network: Base Sepolia, address: ${rows[0][1]})`);
 console.log("No ETH is needed: the x402 facilitator pays gas for EIP-3009 transfers.");
+console.log(`The travel-brief seller hires other sellers and pays them first, so it also needs a little USDC float: ${briefAddr}`);

@@ -23,7 +23,7 @@ app.onError((err, c) => {
 });
 
 // SELLER_PROCESSES=on: each seller runs as its own process and this server forwards /sellers/<id>/... to it.
-const remote = config.sellerProcesses ? await startSellerProcesses(activeSellerDefs().map((d) => d.id)) : new Map<string, number>();
+const remote = config.sellerProcesses ? await startSellerProcesses(activeSellerDefs().filter((d) => !d.inProcess).map((d) => d.id)) : new Map<string, number>();
 const { app: sellers, active } = buildSellers(remote);
 app.route("/auth", auth);
 app.route("/agent", agent);
