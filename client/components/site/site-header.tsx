@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { NAV_ITEMS } from "@/lib/nav";
+import { InfoBar } from "./info-bar";
 import { LogoLockup } from "./logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -43,6 +44,12 @@ export function SiteHeader() {
             <Link href="/marketplace">Open dashboard</Link>
           </Button>
           <ThemeToggle />
+        </div>
+      </div>
+
+      <div className="border-t border-border/60">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 font-mono text-[11px] text-muted-foreground">
+          <InfoBar />
         </div>
       </div>
 

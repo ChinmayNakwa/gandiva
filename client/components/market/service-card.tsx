@@ -4,7 +4,8 @@ import { motion } from "motion/react";
 import { ShieldAlertIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CategoryBadge } from "@/components/status-badge";
-import { ADVERSARIAL_IDS, pct, short, usdc } from "@/lib/format";
+import { AddrLink } from "@/components/tx-link";
+import { ADVERSARIAL_IDS, pct, usdc } from "@/lib/format";
 import type { Service } from "@/lib/types";
 
 export function ServiceCard({
@@ -54,7 +55,9 @@ export function ServiceCard({
             <div className="flex justify-between text-[11px] text-muted-foreground">
               <span>reputation</span>
               <span className="font-mono">
-                {pct(rep.score)} · {rep.successes}/{rep.attempts} ok
+                {rep.attempts
+                  ? `${pct(rep.successRate)} success · ${rep.successes}/${rep.attempts}`
+                  : "new · no calls yet"}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -72,10 +75,14 @@ export function ServiceCard({
             <dd className="text-foreground">
               {rep.medianLatencyMs ? `${rep.medianLatencyMs} ms` : "n/a"}
             </dd>
-            <dt>seller</dt>
-            <dd className="text-foreground">{short(service.payTo)}</dd>
+            <dt>payTo</dt>
+            <dd className="text-foreground">
+              <AddrLink address={service.payTo} />
+            </dd>
             <dt>owner</dt>
             <dd className="text-foreground">{service.owner}</dd>
+            <dt>network</dt>
+            <dd className="text-foreground">{service.network}</dd>
           </dl>
 
           <div className="truncate font-mono text-[11px] text-muted-foreground">

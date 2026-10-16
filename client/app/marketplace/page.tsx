@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { servicesUrl } from "@/lib/api";
 import { useServices } from "@/lib/hooks";
 import {
   MarketFiltersBar,
@@ -18,24 +19,38 @@ export default function MarketplacePage() {
   });
 
   const max = Number(filters.maxPrice);
-  const { data, error, isLoading } = useServices({
+  const query = {
     category: filters.category,
     sort: filters.sort,
     maxPrice:
       filters.maxPrice && Number.isFinite(max) && max > 0
         ? String(Math.round(max * 1e6))
         : "",
-  });
+  };
+  const { data, error, isLoading } = useServices(query);
+  const apiUrl = servicesUrl(query);
 
   const services = data?.services ?? [];
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <PageIntro
         eyebrow="registry"
         title="Marketplace"
-        description="Every listed service, with its on-chain reputation. Prices are per call in USDC; the buyer ranks sellers by reputation, then price, then latency and fails over when a seller misbehaves."
-      />
+        description="Every listed service, with a reputation computed from the buyer's ledger. Prices are per call in USDC; the buyer ranks sellers by reputation, then price, then latency and fails over when a seller misbehaves."
+      >
+        <div className="font-mono text-xs text-muted-foreground">
+          API:{" "}
+          <a
+            href={apiUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            {apiUrl}
+          </a>
+        </div>
+      </PageIntro>
 
       <MarketFiltersBar
         value={filters}
@@ -66,6 +81,6 @@ export default function MarketplacePage() {
           </p>
         )}
       </section>
-    </>
+    </div>
   );
 }

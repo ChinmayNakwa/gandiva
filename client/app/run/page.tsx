@@ -15,6 +15,7 @@ import { LiveLog } from "@/components/run/live-log";
 import { ReceiptTable } from "@/components/run/receipt-table";
 import { Explanation, ResultView } from "@/components/run/result-view";
 import { startRun } from "@/lib/api";
+import { EXAMPLE_TASKS } from "@/lib/examples";
 import { useInfo, useRun } from "@/lib/hooks";
 import { usdc } from "@/lib/format";
 import type { RunStateName } from "@/lib/types";
@@ -30,8 +31,8 @@ const STATE_TONE: Record<RunStateName, string> = {
 export default function RunPage() {
   const { data: info } = useInfo();
   const [form, setForm] = useState<RunForm>({
-    task: "",
-    budget: "0.25",
+    task: EXAMPLE_TASKS[0],
+    budget: "0.05",
     maxConcurrency: 3,
     token: "",
   });
@@ -61,7 +62,7 @@ export default function RunPage() {
   }
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <PageIntro
         eyebrow="buyer agent"
         title="Run a task"
@@ -152,6 +153,6 @@ export default function RunPage() {
           ) : null}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

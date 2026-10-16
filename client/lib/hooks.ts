@@ -34,6 +34,6 @@ export function useSales() {
 
 export function useRun(id?: string | null) {
   return useSWR<Run>(id ? `/buyer/runs/${id}` : null, fetcher, {
-    refreshInterval: 1200,
+    refreshInterval: (run) => (run && run.state !== "running" ? 0 : 1200),
   });
 }

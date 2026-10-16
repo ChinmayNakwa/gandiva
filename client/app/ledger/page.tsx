@@ -4,68 +4,83 @@ import { useState } from "react";
 import { PageIntro } from "@/components/page-intro";
 import { Stat } from "@/components/stat";
 import { LedgerTable } from "@/components/ledger/ledger-table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useLedger } from "@/lib/hooks";
 import { usdc } from "@/lib/format";
+import type { LedgerStatus } from "@/lib/types";
+
+const ALL = "all";
 
 export default function LedgerPage() {
-  const [runId, setRunId] = useState("");
-  const [applied, setApplied] = useState("");
+  const [runId, setRunId] = useState(ALL);
 
-  const { data, error, isLoading } = useLedger(applied || undefined);
+  const { data: all } = useLedger();
+  const { data, error, isLoading } = useLedger(runId === ALL ? undefined : runId);
   const entries = data?.entries ?? [];
+  const runIds = [
+    ...new Set((all?.entries ?? []).map((e) => e.run_id).filter((r): r is string => !!r)),
+  ];
 
-  const paid = entries.filter((e) => e.status === "paid").length;
-  const rejected = entries.filter(
-    (e) => e.status === "paid_output_rejected",
-  ).length;
+  const count = (s: LedgerStatus) => entries.filter((e) => e.status === s).length;
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <PageIntro
         eyebrow="buyer side"
         title="Ledger"
         description="Every call the buyer attempted: what a seller listed, what it actually asked for at the 402 challenge, and what we paid. Refusals and rejects are recorded even though no money moved."
       />
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Stat label="Total paid" value={`${usdc(data?.totalPaid)} USDC`} />
-        <Stat label="Entries" value={entries.length} />
-        <Stat label="Clean payments" value={paid} hint="status = paid" />
-        <Stat label="Output rejected" value={rejected} hint="paid but junk" />
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat
+          label="Total paid"
+          value={`${usdc(data?.totalPaid)} USDC`}
+          hint={`${data?.totalPaid ?? "0"} units`}
+        />
+        <Stat label="Paid" value={count("paid")} hint="clean payments" />
+        <Stat
+          label="Output rejected"
+          value={count("paid_output_rejected")}
+          hint="paid, but junk"
+        />
+        <Stat label="Refused" value={count("refused")} hint="never signed" />
+        <Stat
+          label="Failed"
+          value={count("failed_not_charged")}
+          hint="not charged"
+        />
       </div>
 
-      <form
-        className="mt-6 flex flex-wrap items-center gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setApplied(runId.trim());
-        }}
-      >
-        <Input
-          className="w-56 font-mono"
-          placeholder="filter by run id"
-          value={runId}
-          onChange={(e) => setRunId(e.target.value)}
-        />
-        <Button type="submit" variant="secondary" size="sm">
-          Filter
-        </Button>
-        {applied ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setRunId("");
-              setApplied("");
-            }}
-          >
-            Clear
-          </Button>
-        ) : null}
-      </form>
+      <div className="mt-6 flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="l-run" className="text-xs text-muted-foreground">
+            Run
+          </Label>
+          <Select value={runId} onValueChange={setRunId}>
+            <SelectTrigger id="l-run" className="w-56 font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>all runs</SelectItem>
+              {runIds.map((r) => (
+                <SelectItem key={r} value={r} className="font-mono">
+                  {r}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <span className="pb-2 text-xs text-muted-foreground">
+          {entries.length} entr{entries.length === 1 ? "y" : "ies"} · refreshes every 4 s
+        </span>
+      </div>
 
       <section className="mt-4">
         {error ? (
@@ -76,6 +91,6 @@ export default function LedgerPage() {
           <LedgerTable entries={isLoading && !entries.length ? [] : entries} />
         )}
       </section>
-    </>
+    </div>
   );
 }

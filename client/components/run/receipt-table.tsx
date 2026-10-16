@@ -35,6 +35,7 @@ export function ReceiptTable({ purchases }: { purchases: Purchase[] }) {
             <TableHead className="text-right">Paid</TableHead>
             <TableHead>Latency</TableHead>
             <TableHead>Tx</TableHead>
+            <TableHead>Why chosen</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -69,6 +70,9 @@ export function ReceiptTable({ purchases }: { purchases: Purchase[] }) {
               </TableCell>
               <TableCell>
                 <TxLink hash={p.txHash} />
+              </TableCell>
+              <TableCell className="min-w-[14rem] max-w-[22rem] whitespace-normal text-[11px] text-muted-foreground">
+                {p.why}
               </TableCell>
             </TableRow>
           ))}
