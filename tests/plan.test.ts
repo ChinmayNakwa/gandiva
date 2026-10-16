@@ -6,7 +6,7 @@ import { service } from "./helpers.js";
 
 const all = sellerDefs().map((d) => ({
   ...service({ id: d.id, name: d.name, category: d.category, price: d.listedPrice.toString(), inputSchema: d.inputSchema, outputSchema: d.outputSchema }),
-  reputation: { attempts: 0, successes: 0, successRate: 0, medianLatencyMs: null, score: 1 },
+  reputation: { attempts: 0, successes: 0, successRate: 0, medianLatencyMs: null, score: 1, isNew: true },
 }));
 const env = (store: Record<string, unknown> = {}, callsLeft = 40): ValidationEnv => ({ groups: groupServices(all), all, store: new Map(Object.entries(store)), callsLeft });
 const parse = (obj: unknown) => {

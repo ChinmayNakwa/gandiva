@@ -3,7 +3,7 @@ import { describeSchema, estimatePrice, findGroup, groupServices, renderCatalogu
 import { sellerDefs } from "../src/sellers/index.js";
 import { service } from "./helpers.js";
 
-const rep = (score: number) => ({ attempts: 1, successes: 1, successRate: 1, medianLatencyMs: null, score });
+const rep = (score: number) => ({ attempts: 1, successes: 1, successRate: 1, medianLatencyMs: null, score, isNew: false });
 const fromDefs = () =>
   sellerDefs().map((d) => ({
     ...service({ id: d.id, name: d.name, category: d.category, price: d.listedPrice.toString(), inputSchema: d.inputSchema, outputSchema: d.outputSchema, description: d.description }),
