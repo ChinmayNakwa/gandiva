@@ -29,10 +29,22 @@ function startApi(publicBaseUrl: string) {
 }
 
 // Next.js front door: the public port and the tunnel target. It proxies /registry, /buyer, /sellers, /api to the API.
+// WEB_MODE=prod (default) builds once and serves the production app; WEB_MODE=dev runs `next dev` with hot reload.
 function startWeb(publicBaseUrl: string) {
   const env = { ...process.env, PORT: webPort, API_URL: `http://localhost:${apiPort}`, PUBLIC_BASE_URL: publicBaseUrl };
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  register(spawn(npm, ["--prefix", "client", "run", "dev"], { stdio: "inherit", env, shell: useShell(npm) }));
+  const run = (script: string) => spawn(npm, ["--prefix", "client", "run", script], { stdio: "inherit", env, shell: useShell(npm) });
+  if ((process.env.WEB_MODE || "prod").toLowerCase() === "dev") return register(run("dev"));
+  console.log("Building the web app (WEB_MODE=dev skips this)...");
+  const build = run("build");
+  children.push(build);
+  build.on("exit", (code) => {
+    if (code !== 0) {
+      console.error(`web build failed (exit ${code})`);
+      return shutdown(code ?? 1);
+    }
+    register(run("start"));
+  });
 }
 
 function shutdown(code = 0) {
