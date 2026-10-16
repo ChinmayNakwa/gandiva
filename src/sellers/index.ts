@@ -4,6 +4,7 @@ import { chat } from "../llm.js";
 import { upsertService, type Category, type ServiceInput } from "../registry/store.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
 import { scrapeCataloguePage } from "./books.js";
+import { forwardTo } from "./proxy.js";
 import { cityInfo, cityInput, cityOutput } from "./city.js";
 import { getRate } from "./fx.js";
 import { analyseSentiment, sentimentInput, sentimentOutput } from "./sentiment.js";
@@ -243,9 +244,9 @@ export function sellerDefs(): SellerDef[] {
 
 const isAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
 
-export function buildSellers(): { app: Hono; active: SellerDef[] } {
-  const app = new Hono();
-  const active: SellerDef[] = [];
+/** The built-in sellers that can run: adversarial ones only when SEED_ADVERSARIAL is on, and only with configured wallets. */
+export function activeSellerDefs(): SellerDef[] {
+  const out: SellerDef[] = [];
   for (const def of sellerDefs()) {
     if (def.adversarial && !config.seedAdversarial) continue;
     const payTo402 = def.payToIn402 ?? def.payTo;
@@ -253,19 +254,38 @@ export function buildSellers(): { app: Hono; active: SellerDef[] } {
       console.warn(`[sellers] skipping ${def.id}: payTo address not configured (run npm run wallets:new)`);
       continue;
     }
-    const handler = paidRoute({
-      seller: def.id,
-      description: def.description,
-      price: def.askedPrice ?? def.listedPrice,
-      payTo: payTo402,
-      inputSchema: def.inputSchema,
-      outputSchema: def.outputSchema,
-      selfValidate: def.selfValidate,
-      handler: def.handler,
-    });
-    if (def.method === "GET") app.get(`/${def.id}${def.path}`, handler);
-    else app.post(`/${def.id}${def.path}`, handler);
-    active.push(def);
+    out.push(def);
+  }
+  return out;
+}
+
+/** The paid x402 route for one seller, mounted at /<id><path> on the given app. */
+export function mountSeller(app: Hono, def: SellerDef) {
+  const handler = paidRoute({
+    seller: def.id,
+    description: def.description,
+    price: def.askedPrice ?? def.listedPrice,
+    payTo: def.payToIn402 ?? def.payTo,
+    inputSchema: def.inputSchema,
+    outputSchema: def.outputSchema,
+    selfValidate: def.selfValidate,
+    handler: def.handler,
+  });
+  if (def.method === "GET") app.get(`/${def.id}${def.path}`, handler);
+  else app.post(`/${def.id}${def.path}`, handler);
+}
+
+/**
+ * The /sellers app of the main server. Sellers listed in `remote` run in their own process: their paths are forwarded to
+ * that process's loopback port. All the others are served in this process.
+ */
+export function buildSellers(remote: ReadonlyMap<string, number> = new Map()): { app: Hono; active: SellerDef[] } {
+  const app = new Hono();
+  const active = activeSellerDefs();
+  for (const def of active) {
+    const port = remote.get(def.id);
+    if (port === undefined) mountSeller(app, def);
+    else app.all(`/${def.id}/*`, forwardTo(`http://127.0.0.1:${port}`, `/sellers`));
   }
   return { app, active };
 }

@@ -7,7 +7,8 @@ import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
 import { verifyBuiltIns } from "./registry/probe.js";
 import { registry } from "./registry/routes.js";
-import { buildSellers, seedRegistry } from "./sellers/index.js";
+import { activeSellerDefs, buildSellers, seedRegistry } from "./sellers/index.js";
+import { startSellerProcesses } from "./sellers/supervisor.js";
 import { getResourceServer } from "./x402/resourceServer.js";
 import { startResolver } from "./x402/resolver.js";
 import { spendCap } from "./x402/spendCap.js";
@@ -19,7 +20,9 @@ app.onError((err, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
-const { app: sellers, active } = buildSellers();
+// SELLER_PROCESSES=on: each seller runs as its own process and this server forwards /sellers/<id>/... to it.
+const remote = config.sellerProcesses ? await startSellerProcesses(activeSellerDefs().map((d) => d.id)) : new Map<string, number>();
+const { app: sellers, active } = buildSellers(remote);
 app.route("/registry", registry);
 app.route("/sellers", sellers);
 app.route("/buyer", buyer);
@@ -50,6 +53,7 @@ serve({ fetch: app.fetch, port: config.port }, () => {
   console.log(`Gandiva running on http://localhost:${config.port}  (public: ${config.publicBaseUrl})`);
   console.log(`  web        ${config.publicBaseUrl}/`);
   console.log(`  registry   ${config.publicBaseUrl}/registry/services`);
+  if (remote.size) console.log(`  sellers    ${remote.size} separate processes on 127.0.0.1:${config.sellerBasePort}-${config.sellerBasePort + remote.size - 1}, own database each (data/sellers/)`);
   for (const s of active) console.log(`  seller     ${config.publicBaseUrl}/sellers/${s.id}${s.path}${s.adversarial ? "  (demo bad actor)" : ""}`);
   try {
     console.log(`  buyer      ${getPayer().address}`);

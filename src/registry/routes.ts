@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
+import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
 import { deleteService, getService, listLedger, listSales, RegistryError, registerExternal, reputationFor, searchServices } from "./store.js";
 
@@ -64,8 +65,9 @@ registry.get("/ledger", (c) => {
   return c.json({ totalPaid: totalPaid.toString(), totalPaidUsdc: fromUnits(totalPaid), unconfirmedCount: unconfirmed.length, entries: rows });
 });
 
-registry.get("/sales", (c) => {
+registry.get("/sales", async (c) => {
+  const rows = sellerPorts.size ? await collectSales(listSales(), sellerPorts) : listSales();
   return c.json({
-    sales: listSales().map((s) => ({ ...s, explorer: s.tx_hash ? EXPLORER_TX + s.tx_hash : null, amount_usdc: fromUnits(s.amount) })),
+    sales: rows.map((s) => ({ ...s, explorer: s.tx_hash ? EXPLORER_TX + s.tx_hash : null, amount_usdc: fromUnits(s.amount) })),
   });
 });

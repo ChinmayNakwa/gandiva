@@ -38,6 +38,9 @@ export const config = {
     halfLifeMs: Number(env("REPUTATION_HALF_LIFE_HOURS", "6")) * 3_600_000,
     newAttempts: Number(env("REPUTATION_NEW_ATTEMPTS", "3")),
   },
+  // SELLER_PROCESSES=on runs every built-in seller as its own process (own port, own SQLite file) behind the same public URLs.
+  sellerProcesses: env("SELLER_PROCESSES", "off").toLowerCase() === "on",
+  sellerBasePort: Number(env("SELLER_BASE_PORT", "4100")),
   seedAdversarial: env("SEED_ADVERSARIAL", "true") !== "false",
   ollama: {
     host: env("OLLAMA_HOST", "http://127.0.0.1:11434").replace(/\/$/, ""),
