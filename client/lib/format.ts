@@ -57,3 +57,11 @@ export function statusLabel(status: string): string {
       return status.replace(/_/g, " ");
   }
 }
+
+/** "0.0015" -> "1500" (USDC smallest units, 6 decimals); null when it is not a plain decimal number with at most 6 decimals. */
+export function toUnits(input: string): string | null {
+  const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(input.trim());
+  if (!m) return null;
+  const units = Number(m[1]) * 1_000_000 + Number((m[2] ?? "").padEnd(6, "0") || "0");
+  return Number.isSafeInteger(units) ? String(units) : null;
+}

@@ -3,6 +3,7 @@ import type {
   LedgerResponse,
   Run,
   SalesResponse,
+  Service,
   ServicesResponse,
 } from "./types";
 
@@ -41,6 +42,36 @@ export const getServices = (q: ServiceQuery = {}) =>
 
 export const getLedger = (runId?: string) =>
   get<LedgerResponse>(`/registry/ledger${runId ? `?runId=${runId}` : ""}`);
+
+export interface ListingForm {
+  id?: string;
+  name: string;
+  category: string;
+  endpoint: string;
+  method: "GET" | "POST";
+  /** USDC smallest units (6 decimals). */
+  price: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+}
+
+async function send<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method,
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => null)) as (T & { error?: string; issues?: { path: (string | number)[]; message: string }[] }) | null;
+  if (!res.ok) {
+    const detail = data?.issues?.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new Error(detail || data?.error || `request failed (${res.status})`);
+  }
+  return data as T;
+}
+
+export const saveListing = (form: ListingForm) => send<Service>("POST", "/registry/mine/services", form);
+export const deleteListing = (id: string) => send<{ ok: true }>("DELETE", `/registry/mine/services/${encodeURIComponent(id)}`);
 
 export const getSales = () => get<SalesResponse>("/registry/sales");
 
