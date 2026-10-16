@@ -103,6 +103,7 @@ ngrok's free tier shows a warning page to browsers on first visit; click "Visit 
 |---|---|
 | Web app: home, marketplace, run a task, ledger, sales | `/`, `/marketplace`, `/run`, `/ledger`, `/sales` |
 | Health check | `/healthz` |
+| Paid MCP tools (x402 over MCP) | `POST /mcp` |
 | Registry API | `/registry/services?category=&maxPrice=&sort=rank\|price\|latency` |
 | Ledger API | `/registry/ledger` |
 | Seller sales | `/registry/sales` |
@@ -167,6 +168,20 @@ npm run task -- "<task>" 0.05 3 --legacy  # built-in books pipeline only, no LLM
 - Nobody is charged for a half-finished brief: if any hop fails, the request fails before the buyer's payment settles. The agent keeps the cost of hops it already paid (visible in its ledger), so its wallet needs a little USDC float (a few cents; each sale refills it).
 - `npm run judge:chain` runs it once for real (spends 0.020 from the buyer wallet; the agent spends up to 0.013). Then `npm run reconcile` and `npm run reconcile -- <travel-brief address>` tie out both wallets.
 
+### Paid MCP tools
+
+`POST /mcp` is an MCP server (Streamable HTTP) whose tools are paid with x402, using `@x402/mcp`. Any MCP client with x402 payments can use the marketplace without our buyer.
+
+- **Free tools:** `list_services` (the registry, best-ranked first) and `get_reputation`.
+- **Paid tools:** every honest built-in seller (`shelf_scraper`, `fx_rates`, `hindi_summary`, `city_info`, `sentiment`, `travel_brief`) plus every LLM agent listed from the Sell tab. Each is sold at the listed price and paid to the listed payTo.
+- **Same rules as the HTTP sellers:**
+  - Bad input is refused before any payment is asked for.
+  - A tool that fails or returns schema-breaking output is never settled.
+  - One authorisation unlocks exactly one result: the MCP tools and the HTTP sellers share the same nonce table.
+  - Sales show up on the Sales page.
+- **Not wrapped:** Sell-tab "own endpoint" listings, because their own server asks for its own payment.
+- **Demo:** `npm run mcp:demo -- --free` lists the tools and calls the free ones. `npm run mcp:demo` also buys one `city_info` call (0.002 USDC from the buyer wallet). Before paying, the demo client checks that the price and payTo match the registry.
+
 ## Judge test pack
 
 | Test | Command | What it shows |
@@ -180,7 +195,7 @@ npm run task -- "<task>" 0.05 3 --legacy  # built-in books pipeline only, no LLM
 | Junk output | `npm run judge:junk` | standard-SDK seller returns junk: paid, output rejected, reputation drops, buyer buys elsewhere |
 | Standard client | `npm run interop:ref-buyer` and `npm run judge:interop` | unmodified `@x402/fetch` pays our seller; our buyer pays an unmodified `@x402/express` seller |
 | Unconfirmed payment | `npm run judge:unconfirmed` (add `-- --expire` for the never-settles case, about 5 min) | buyer times out after signing: ledger shows `unconfirmed`, then the chain resolves it to `paid` with the tx hash (or to `failed, not charged` once the authorisation expires) |
-| Key hygiene | `gitleaks detect` | keys only in `.env` (gitignored); the web app only receives addresses; logs never print keys or signatures |
+| Key hygiene | `gitleaks detect` | keys only in `.env` (gitignored); the web app only receives addresses; logs never print keys or signatures. `.gitleaksignore` lists one old commit whose test file held a made-up key (`sk-secret-...`), never a real one |
 
 To register your own reference seller, `POST /registry/services`:
 
