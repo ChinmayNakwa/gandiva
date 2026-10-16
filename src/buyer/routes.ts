@@ -1,11 +1,14 @@
 import { Hono } from "hono";
-import { config } from "../config.js";
+import { AgentWalletError, getAgentPayer, usdcBalance } from "../agents/wallet.js";
+import { currentUser } from "../auth/routes.js";
+import { config, fromUnits, toUnits } from "../config.js";
 import { buyCategory, buyOnce, getRun, listRuns, startTask } from "./scout.js";
 
 export const buyer = new Hono();
 
+// The optional buyer token guards the shared demo wallet; a signed-in user spends their own money, so it does not apply to them.
 buyer.use("/*", async (c, next) => {
-  if (c.req.method !== "GET" && config.buyerToken && c.req.header("x-buyer-token") !== config.buyerToken) {
+  if (c.req.method !== "GET" && config.buyerToken && !currentUser(c) && c.req.header("x-buyer-token") !== config.buyerToken) {
     return c.json({ error: "missing or wrong x-buyer-token" }, 401);
   }
   await next();
@@ -14,16 +17,33 @@ buyer.use("/*", async (c, next) => {
 buyer.post("/run", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.task || typeof body.task !== "string") return c.json({ error: "task (string) is required" }, 400);
+  const budget = String(body.budget ?? "0.05");
+  const dryRun = body.dryRun === true || body.dry_run === true;
   try {
+    // Signed in: the run pays from this user's own agent wallet, and only if it holds enough. Otherwise: the shared demo wallet.
+    const user = currentUser(c);
+    let payer;
+    if (user) {
+      payer = getAgentPayer(user);
+      if (!dryRun) {
+        const held = await usdcBalance(payer.address);
+        if (held < toUnits(budget)) {
+          return c.json({ error: `Your agent wallet holds ${fromUnits(held)} USDC but this run's budget is ${budget} USDC. Add funds to your agent wallet on the Run page or lower the budget.` }, 400);
+        }
+      }
+    }
     const run = startTask({
       task: body.task,
-      budget: String(body.budget ?? "0.05"),
+      budget,
       maxConcurrency: Number(body.maxConcurrency ?? body.max_concurrency ?? 3),
-      dryRun: body.dryRun === true || body.dry_run === true,
+      dryRun,
       mode: ["agent", "legacy", "auto"].includes(body.mode) ? body.mode : undefined,
+      payer,
+      owner: user ?? undefined,
     });
     return c.json({ runId: run.id, status: `/buyer/runs/${run.id}` }, 202);
   } catch (err: any) {
+    if (err instanceof AgentWalletError) return c.json({ error: err.message }, err.status);
     return c.json({ error: err?.message ?? String(err) }, 400);
   }
 });

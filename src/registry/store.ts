@@ -323,18 +323,20 @@ export function listAuditable(nowSeconds: number, graceSeconds = 90) {
     .all(nowSeconds - graceSeconds) as any[];
 }
 
-/** Money the buyer has spent or may have spent since `sinceIso`: charged rows plus unconfirmed ones at the amount they asked. */
-export function spentSince(sinceIso: string): bigint {
+/** Money spent or possibly spent since `sinceIso` (all buyers, or just one wallet): charged rows plus unconfirmed ones at the amount they asked. */
+export function spentSince(sinceIso: string, buyer?: string): bigint {
   const rows = db
-    .prepare("SELECT status, paid, asked FROM ledger WHERE ts >= ? AND status IN ('paid','paid_output_rejected','unconfirmed')")
-    .all(sinceIso) as { status: LedgerStatus; paid: string; asked: string | null }[];
+    .prepare("SELECT status, paid, asked FROM ledger WHERE ts >= ? AND status IN ('paid','paid_output_rejected','unconfirmed')" + (buyer ? " AND lower(buyer) = ?" : ""))
+    .all(...(buyer ? [sinceIso, buyer.toLowerCase()] : [sinceIso])) as { status: LedgerStatus; paid: string; asked: string | null }[];
   return rows.reduce((sum, r) => sum + BigInt(r.status === "unconfirmed" ? (r.asked ?? "0") : r.paid), 0n);
 }
 
-export function listLedger(q: { runId?: string; limit?: number } = {}) {
+export function listLedger(q: { runId?: string; buyer?: string; limit?: number } = {}) {
   const rows = q.runId
     ? db.prepare("SELECT * FROM ledger WHERE run_id = ? ORDER BY id DESC").all(q.runId)
-    : db.prepare("SELECT * FROM ledger ORDER BY id DESC LIMIT ?").all(q.limit ?? 500);
+    : q.buyer
+      ? db.prepare("SELECT * FROM ledger WHERE lower(buyer) = ? ORDER BY id DESC LIMIT ?").all(q.buyer.toLowerCase(), q.limit ?? 500)
+      : db.prepare("SELECT * FROM ledger ORDER BY id DESC LIMIT ?").all(q.limit ?? 500);
   return rows as any[];
 }
 

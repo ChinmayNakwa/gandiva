@@ -22,8 +22,13 @@ export function getPayer(): SafePayer {
 }
 
 export const getRun = (id: string) => runs.get(id);
+
+/** Does this user have a paying run in progress? (A withdrawal must wait for it.) */
+export const hasActiveRun = (owner: string) => [...runs.values()].some((r) => r.owner === owner.toLowerCase() && r.state === "running" && !r.dryRun);
 export const listRuns = () => [...runs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 50);
 
+// The shared demo wallet pays for anonymous runs, judge calls and the CLI; a signed-in user's run pays with their own agent wallet.
+const payWith = (payer: SafePayer) => (...args: Parameters<SafePayer["call"]>) => payer.call(...args);
 const pay = (...args: Parameters<SafePayer["call"]>) => getPayer().call(...args);
 
 /**
@@ -61,6 +66,10 @@ export interface StartOptions {
   dryRun?: boolean;
   /** auto (default): agent first, books pipeline as fallback. agent: never fall back. legacy: books pipeline only. */
   mode?: "auto" | "agent" | "legacy";
+  /** Pays for the run instead of the shared demo wallet (a signed-in user's agent wallet). */
+  payer?: SafePayer;
+  /** Signed-in user who owns the run (lower-case wallet address). */
+  owner?: string;
 }
 
 const defaultMode = (): NonNullable<StartOptions["mode"]> => {
@@ -72,6 +81,7 @@ export function startTask(opts: StartOptions): RunState {
   const budgetUnits = toUnits(opts.budget);
   if (budgetUnits <= 0n || budgetUnits > toUnits("1")) throw new Error("budget must be between 0 and 1 USDC");
   const mode = opts.mode ?? defaultMode();
+  const payer = opts.payer ?? getPayer();
   const run: RunState = {
     id: randomUUID().slice(0, 8),
     task: opts.task,
@@ -80,13 +90,15 @@ export function startTask(opts: StartOptions): RunState {
     state: "running",
     mode: mode === "legacy" ? "legacy" : "agent",
     dryRun: Boolean(opts.dryRun),
+    buyer: payer.address,
+    owner: opts.owner,
     log: [],
     purchases: [],
     startedAt: new Date().toISOString(),
   };
   runs.set(run.id, run);
   db.prepare("INSERT INTO runs (id, ts, task, budget) VALUES (?,?,?,?)").run(run.id, run.startedAt, run.task, run.budget);
-  executeTask(run, mode).catch((err) => {
+  executeTask(run, mode, payer).catch((err) => {
     run.state = "failed";
     run.log.push(`fatal: ${err?.message ?? err}`);
     run.finishedAt = new Date().toISOString();
@@ -102,10 +114,10 @@ export const beyondBooks = (task: string): string | undefined => {
   return hit?.[0].toLowerCase();
 };
 
-async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]>) {
+async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]>, payer: SafePayer) {
   const budget = new BudgetLedger(BigInt(run.budget));
-  const ctx = new Ctx(run, budget, run.maxConcurrency, pay);
-  ctx.log(`${run.dryRun ? "DRY RUN (nothing will be paid). " : ""}budget ${usd(run.budget)} USDC, max_concurrency ${run.maxConcurrency}, buyer ${getPayer().address}`);
+  const ctx = new Ctx(run, budget, run.maxConcurrency, payWith(payer));
+  ctx.log(`${run.dryRun ? "DRY RUN (nothing will be paid). " : ""}budget ${usd(run.budget)} USDC, max_concurrency ${run.maxConcurrency}, buyer ${payer.address}${run.owner ? " (your agent wallet)" : ""}`);
 
   if (mode !== "legacy") {
     const outcome = await runAgent(ctx, {

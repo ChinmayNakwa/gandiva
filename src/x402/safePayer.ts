@@ -7,7 +7,7 @@ import { fromUnits, NETWORK } from "../config.js";
 import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
 import type { BudgetLedger } from "./budget.js";
 import { validate } from "./schema.js";
-import { spendCap, type CapReservation } from "./spendCap.js";
+import { spendCap as sharedCap, type CapReservation, type SpendCap } from "./spendCap.js";
 
 export interface CallResult {
   status: LedgerStatus;
@@ -80,7 +80,11 @@ export class SafePayer {
   readonly account: PrivateKeyAccount;
   private client: x402Client;
 
-  constructor(privateKey: `0x${string}`) {
+  /** `cap` is the spend cap this wallet answers to; the default is the shared demo wallet's. */
+  constructor(
+    privateKey: `0x${string}`,
+    readonly cap: SpendCap = sharedCap,
+  ) {
     this.account = privateKeyToAccount(privateKey);
     this.client = new x402Client();
     registerExactEvmScheme(this.client, { signer: this.account, networks: [NETWORK] });
@@ -88,6 +92,11 @@ export class SafePayer {
 
   get address() {
     return this.account.address;
+  }
+
+  /** Signs a payment for the given 402 terms with this wallet (no network call, nothing is moved until someone settles it). */
+  sign(pr: PaymentRequired) {
+    return this.client.createPaymentPayload(pr);
   }
 
   async call(service: Service, input: Record<string, unknown>, ctx: { budget: BudgetLedger; runId?: string; timeoutMs?: number }): Promise<CallResult> {
@@ -144,10 +153,10 @@ export class SafePayer {
       });
     }
 
-    capHold = await spendCap.reserve(asked);
+    capHold = await this.cap.reserve(asked);
     if (!capHold) {
       reservation.release();
-      const s = spendCap.status();
+      const s = this.cap.status();
       return finish({ status: "refused", paid: 0n, asked, reason: `spend cap: wallet limit ${s.limitUsdc} USDC per ${s.windowMinutes} min reached (${s.usedUsdc} used); needs ${fromUnits(asked)}` });
     }
 

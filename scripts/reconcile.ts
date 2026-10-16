@@ -1,6 +1,8 @@
 // Reconciliation: the ledger's charged entries must equal the USDC transfers out of the buyer wallet, to the unit.
 // 1) every charged ledger row's tx must contain a USDC Transfer buyer -> listed payTo of exactly the paid amount
 // 2) a full log scan of USDC transfers from the buyer since the first ledger tx must sum to the same total
+//    (an agent wallet's withdrawals back to its owner are outgoing transfers too, so they are added to the ledger side)
+// Usage: npm run reconcile [-- <wallet address>]   (default: the shared demo wallet; pass a user's agent wallet to check it)
 import { createPublicClient, http, parseAbiItem, parseEventLogs, erc20Abi } from "viem";
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
@@ -10,7 +12,15 @@ import { api, units } from "./lib.js";
 const client = createPublicClient({ chain: baseSepolia, transport: http(config.rpcUrl) });
 const buyer = (process.argv[2] || privateKeyToAccount(config.buyerPrivateKey as `0x${string}`).address).toLowerCase();
 
-const { entries } = await api<{ entries: any[] }>("/registry/ledger");
+const { entries } = await api<{ entries: any[] }>(`/registry/ledger?buyer=${buyer}`);
+const { withdrawals } = await api<{ withdrawals: any[] }>(`/registry/withdrawals?buyer=${buyer}`);
+const unknownWithdrawals = withdrawals.filter((w) => w.status === "unknown");
+if (unknownWithdrawals.length) {
+  console.log(`buyer ${buyer}`);
+  console.log(`\nNOT RECONCILED: ${unknownWithdrawals.length} withdrawal(s) have an unknown outcome (the request failed after signing). Check the wallet balance on the explorer, then retry.`);
+  process.exit(1);
+}
+const withdrawn = withdrawals.filter((w) => w.status === "settled").reduce((a, w) => a + BigInt(w.amount), 0n);
 // An "unconfirmed" row is a payment whose outcome is not known yet. Reconciliation cannot be trusted while any exist:
 // the background resolver settles them from the chain within a minute or two, then re-run this script.
 const unconfirmed = entries.filter((e) => e.status === "unconfirmed" && e.buyer.toLowerCase() === buyer);
@@ -91,8 +101,9 @@ if (firstBlock !== null) {
   console.log(`chain: ${count} USDC transfers out of buyer since block ${firstBlock}, total ${chainTotal} units (${units(chainTotal)} USDC)`);
 
   if (direct.length) console.log(`direct payments by test scripts (seller sales, not via Scout): ${direct.length}, total ${directTotal} units`);
-  console.log(`ledger ${ledgerTotal} + direct ${directTotal} = ${ledgerTotal + directTotal} units vs chain ${chainTotal} units`);
-  if (chainTotal !== ledgerTotal + directTotal) problems.push(`chain total ${chainTotal} != ledger ${ledgerTotal} + direct ${directTotal}`);
+  if (withdrawn) console.log(`withdrawals back to the owner: ${withdrawals.filter((w) => w.status === "settled").length}, total ${withdrawn} units`);
+  console.log(`ledger ${ledgerTotal} + direct ${directTotal} + withdrawn ${withdrawn} = ${ledgerTotal + directTotal + withdrawn} units vs chain ${chainTotal} units`);
+  if (chainTotal !== ledgerTotal + directTotal + withdrawn) problems.push(`chain total ${chainTotal} != ledger ${ledgerTotal} + direct ${directTotal} + withdrawn ${withdrawn}`);
 }
 
 if (problems.length) {

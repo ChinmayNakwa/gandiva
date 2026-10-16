@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS hosted_sellers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Money the user took back out of their agent wallet (outgoing transfers that are not payments to sellers; reconcile subtracts them).
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  user_address TEXT NOT NULL,
+  agent_address TEXT NOT NULL,
+  to_address TEXT NOT NULL,
+  amount TEXT NOT NULL,
+  tx_hash TEXT,
+  status TEXT NOT NULL,
+  reason TEXT
+);
+
 -- Wallet sign-in: one-time nonces, sessions (only a hash of the cookie token is stored) and the signed-in users.
 CREATE TABLE IF NOT EXISTS auth_nonces (
   nonce TEXT PRIMARY KEY,

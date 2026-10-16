@@ -1,4 +1,5 @@
 import { Mutex } from "async-mutex";
+import { privateKeyToAccount } from "viem/accounts";
 import { config, fromUnits } from "../config.js";
 import { spentSince } from "../registry/store.js";
 
@@ -7,9 +8,11 @@ export interface CapReservation {
 }
 
 /**
- * Wallet-level spend cap shared by every run and every direct call, independent of per-run budgets.
+ * Spend cap shared by every run and every direct call of one wallet, independent of per-run budgets.
  * Counts what the ledger says was spent (or may have been, for unconfirmed rows) in the rolling window plus
- * payments in flight, so a flood of runs cannot drain the buyer wallet.
+ * payments in flight, so a flood of runs cannot drain the wallet.
+ * With `buyer` it counts only that wallet's ledger rows (each signed-in user's agent wallet has its own cap);
+ * without it every row counts.
  */
 export class SpendCap {
   private inFlight = 0n;
@@ -18,6 +21,7 @@ export class SpendCap {
   constructor(
     readonly limit: bigint,
     readonly windowMs: number,
+    private readonly buyer?: string | (() => string | undefined),
   ) {}
 
   get enabled() {
@@ -26,7 +30,8 @@ export class SpendCap {
 
   /** Spent in the window plus in flight. */
   used(now = Date.now()): bigint {
-    return spentSince(new Date(now - this.windowMs).toISOString()) + this.inFlight;
+    const buyer = typeof this.buyer === "function" ? this.buyer() : this.buyer;
+    return spentSince(new Date(now - this.windowMs).toISOString(), buyer) + this.inFlight;
   }
 
   status(now = Date.now()) {
@@ -60,4 +65,11 @@ export class SpendCap {
   }
 }
 
-export const spendCap = new SpendCap(config.spendCap.limit, config.spendCap.windowMs);
+/** The shared demo wallet (BUYER_PRIVATE_KEY) counts only its own payments, so signed-in users' spending never eats into it. */
+let sharedBuyer: string | undefined;
+const sharedBuyerAddress = () => (sharedBuyer ??= config.buyerPrivateKey ? privateKeyToAccount(config.buyerPrivateKey).address.toLowerCase() : undefined);
+
+export const spendCap = new SpendCap(config.spendCap.limit, config.spendCap.windowMs, sharedBuyerAddress);
+
+/** A signed-in user's agent wallet gets its own cap with the same limit and window. */
+export const capForWallet = (address: string) => new SpendCap(config.spendCap.limit, config.spendCap.windowMs, address.toLowerCase());

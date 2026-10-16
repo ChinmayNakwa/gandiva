@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
 import { currentUser } from "../auth/routes.js";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
+import { listWithdrawals } from "../agents/wallet.js";
 import { listHostedFor } from "../hosted/agents.js";
 import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
@@ -95,7 +96,7 @@ registry.delete("/services/:id", (c) => {
 
 registry.get("/ledger", (c) => {
   const runId = c.req.query("runId");
-  const rows = listLedger({ runId }).map((r) => ({
+  const rows = listLedger({ runId, buyer: c.req.query("buyer") }).map((r) => ({
     ...r,
     explorer: r.tx_hash ? EXPLORER_TX + r.tx_hash : null,
     listed_usdc: fromUnits(r.listed),
@@ -107,6 +108,9 @@ registry.get("/ledger", (c) => {
   const unconfirmed = rows.filter((r) => r.status === "unconfirmed");
   return c.json({ totalPaid: totalPaid.toString(), totalPaidUsdc: fromUnits(totalPaid), unconfirmedCount: unconfirmed.length, entries: rows });
 });
+
+// Money taken back out of agent wallets (outgoing transfers that are not seller payments); scripts/reconcile.ts needs them.
+registry.get("/withdrawals", (c) => c.json({ withdrawals: listWithdrawals(c.req.query("buyer")) }));
 
 registry.get("/sales", async (c) => {
   const rows = sellerPorts.size ? await collectSales(listSales(), sellerPorts) : listSales();

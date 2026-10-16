@@ -49,6 +49,10 @@ export interface RunState {
   /** agent = the LLM plans in rounds; legacy = the built-in books pipeline (used as a fallback). */
   mode: "agent" | "legacy";
   dryRun: boolean;
+  /** Wallet that pays for this run: the signed-in user's agent wallet, or the shared demo wallet. */
+  buyer?: string;
+  /** Signed-in user (lower-case wallet address) who started the run; absent for the shared demo wallet. */
+  owner?: string;
   log: string[];
   plan?: TaskPlan;
   planner?: string;
