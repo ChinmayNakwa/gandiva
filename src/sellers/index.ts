@@ -4,7 +4,9 @@ import { chat } from "../llm.js";
 import { upsertService, type Category, type ServiceInput } from "../registry/store.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
 import { scrapeCataloguePage } from "./books.js";
+import { cityInfo, cityInput, cityOutput } from "./city.js";
 import { getRate } from "./fx.js";
+import { analyseSentiment, sentimentInput, sentimentOutput } from "./sentiment.js";
 
 const scrapeInput = {
   type: "object",
@@ -209,6 +211,32 @@ export function sellerDefs(): SellerDef[] {
       outputSchema: summariseOutput,
       description: "Summarise up to 2 texts per call in Hindi (Devanagari) with an LLM on our GPU box.",
       handler: summariseHindi,
+    },
+    {
+      id: "city-info",
+      name: "city-info",
+      category: "data",
+      path: "/city",
+      method: "GET",
+      listedPrice: 2000n,
+      payTo: p.cityInfo,
+      inputSchema: cityInput,
+      outputSchema: cityOutput,
+      description: "Current weather for a city (Open-Meteo) plus its country, timezone, population and local currency code, ready to use with fx-rates.",
+      handler: cityInfo,
+    },
+    {
+      id: "sentiment",
+      name: "sentiment",
+      category: "inference",
+      path: "/analyse",
+      method: "POST",
+      listedPrice: 3000n,
+      payTo: p.sentiment,
+      inputSchema: sentimentInput,
+      outputSchema: sentimentOutput,
+      description: "Sentiment of up to 4 short texts per call (positive, neutral or negative with a 0-1 confidence and a one-line reason), using an LLM.",
+      handler: analyseSentiment,
     },
   ];
 }

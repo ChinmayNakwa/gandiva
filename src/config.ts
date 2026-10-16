@@ -36,6 +36,8 @@ export const config = {
     cheapScraper: env("PAYTO_CHEAP_SCRAPER"),
     fxRates: env("PAYTO_FX_RATES"),
     hindiSummary: env("PAYTO_HINDI_SUMMARY"),
+    cityInfo: env("PAYTO_CITY_INFO"),
+    sentiment: env("PAYTO_SENTIMENT"),
     junkFx: env("PAYTO_JUNK_FX"),
     mirrorScraper: env("PAYTO_MIRROR_SCRAPER"),
     attacker: env("PAYTO_ATTACKER"),
