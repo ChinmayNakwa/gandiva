@@ -4,7 +4,8 @@ export type LedgerStatus =
   | "paid"
   | "paid_output_rejected"
   | "refused"
-  | "failed_not_charged";
+  | "failed_not_charged"
+  | "unconfirmed";
 
 export interface Reputation {
   attempts: number;
@@ -151,6 +152,7 @@ export interface ServicesResponse {
 export interface LedgerResponse {
   totalPaid: string;
   totalPaidUsdc: string;
+  unconfirmedCount?: number;
   entries: LedgerEntry[];
 }
 

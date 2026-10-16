@@ -38,11 +38,16 @@ export default function LedgerPage() {
         description="Every call the buyer attempted: what a seller listed, what it actually asked for at the 402 challenge, and what we paid. Refusals and rejects are recorded even though no money moved."
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat
           label="Total paid"
           value={`${usdc(data?.totalPaid)} USDC`}
           hint={`${data?.totalPaid ?? "0"} units`}
+        />
+        <Stat
+          label="Unconfirmed"
+          value={count("unconfirmed")}
+          hint="settling, checked on-chain"
         />
         <Stat label="Paid" value={count("paid")} hint="clean payments" />
         <Stat

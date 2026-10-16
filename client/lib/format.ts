@@ -47,6 +47,8 @@ export function statusLabel(status: string): string {
       return "paid, output rejected";
     case "failed_not_charged":
       return "failed, not charged";
+    case "unconfirmed":
+      return "unconfirmed, checking chain";
     case "refused":
       return "refused";
     case "replay_rejected":

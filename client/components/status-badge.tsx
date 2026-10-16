@@ -8,6 +8,7 @@ const TONE: Record<string, string> = {
   refused: "border-bad/40 bg-bad/10 text-bad",
   replay_rejected: "border-bad/40 bg-bad/10 text-bad",
   failed_not_charged: "border-border bg-muted/40 text-muted-foreground",
+  unconfirmed: "border-warn/40 bg-warn/10 text-warn",
 };
 
 export function StatusBadge({
