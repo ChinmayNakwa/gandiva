@@ -27,8 +27,8 @@ const STEPS = [
   },
   {
     icon: CheckCircle2Icon,
-    title: "Facilitator settles",
-    body: "Payment is verified and settled on Base; the seller returns the data.",
+    title: "Work, then settle",
+    body: "The seller verifies the signature, does the work, checks its output, and only then settles on Base Sepolia through the facilitator.",
   },
 ];
 
@@ -45,7 +45,7 @@ export function X402Flow() {
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
             x402 turns an ordinary HTTP request into a paid one. Nothing is
-            charged until the seller proves it can settle the payment.
+            charged until the seller has delivered valid output.
           </p>
         </div>
       </Reveal>

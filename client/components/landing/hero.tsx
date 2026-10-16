@@ -20,12 +20,12 @@ const item: Variants = {
 };
 
 const LINES = [
-  { t: "$ gandiva run --task \"cheapest 5-star books, 1→4\"", c: "text-foreground" },
-  { t: "POST /scrape  { page: 1 }", c: "text-muted-foreground" },
-  { t: "402 Payment Required · 0.002 USDC → payTo:0xSeller…", c: "text-info" },
+  { t: "$ npm run task -- \"cheapest 5-star books, pages 1→4\" 0.05 3", c: "text-foreground" },
+  { t: "GET /sellers/shelf-scraper/scrape?page=1", c: "text-muted-foreground" },
+  { t: "402 Payment Required · 0.005 USDC → payTo 0xf8ec…dFa1", c: "text-info" },
+  { t: "check price, token, network, payTo · reserve budget", c: "text-muted-foreground" },
   { t: "→ sign transferWithAuthorization (EIP-3009)", c: "text-muted-foreground" },
-  { t: "← 200 OK · 200 books · 118 ms", c: "text-ok" },
-  { t: "settled on Base Sepolia · tx 0x8f3a…c21", c: "text-primary" },
+  { t: "← 200 OK · 20 books · PAYMENT-RESPONSE tx 0x…", c: "text-ok" },
 ];
 
 export function Hero() {
@@ -102,7 +102,7 @@ export function Hero() {
             <span className="size-2.5 rounded-full bg-warn/70" />
             <span className="size-2.5 rounded-full bg-ok/70" />
             <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-              buyer agent — live trace
+              buyer agent — example trace
             </span>
           </div>
           <div className="flex flex-col gap-1.5 font-mono text-[12px] leading-relaxed">

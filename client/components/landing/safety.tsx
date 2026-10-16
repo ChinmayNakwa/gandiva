@@ -2,6 +2,7 @@
 
 import {
   EyeOffIcon,
+  PackageCheckIcon,
   RepeatIcon,
   ScaleIcon,
   ShieldCheckIcon,
@@ -18,17 +19,22 @@ const RULES = [
   {
     icon: ScaleIcon,
     title: "Price must match",
-    body: "The amount asked at the 402 challenge has to equal the listed price. A seller that quotes higher is refused, not paid.",
+    body: "The 402 challenge must ask no more than the listed price, in the listed token, on the listed network, to the listed payTo. Anything else is refused before signing.",
+  },
+  {
+    icon: PackageCheckIcon,
+    title: "No service, no charge",
+    body: "Sellers verify the payment, do the work and check their own output first. Settlement only happens after valid output, so a failed call costs nothing.",
   },
   {
     icon: ShieldCheckIcon,
     title: "Reputation failover",
-    body: "Sellers are ranked by on-chain reputation. Junk output or a bad price drops that seller and the agent retries the next one.",
+    body: "Sellers are ranked by a reputation score computed from the ledger. Junk output drops that seller's score and the agent buys from the next one.",
   },
   {
     icon: RepeatIcon,
     title: "Replay protection",
-    body: "Each payment is an EIP-3009 authorisation that is single-use and time-boxed, so a captured signature can't be spent again.",
+    body: "Each EIP-3009 authorisation nonce is claimed once by the seller before verifying. A copied signature, sequential or parallel, gets 409 and never settles twice.",
   },
   {
     icon: EyeOffIcon,
