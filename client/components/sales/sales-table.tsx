@@ -8,8 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StatusBadge } from "@/components/status-badge";
 import { AddrLink, TxLink } from "@/components/tx-link";
-import { clock, statusLabel, usdc } from "@/lib/format";
+import { clock, usdc } from "@/lib/format";
 import type { Sale } from "@/lib/types";
 
 export function SalesTable({ sales }: { sales: Sale[] }) {
@@ -41,18 +42,20 @@ export function SalesTable({ sales }: { sales: Sale[] }) {
               <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
                 {clock(s.ts)}
               </TableCell>
-              <TableCell>
-                <AddrLink address={s.seller} />
-              </TableCell>
+              <TableCell className="font-mono text-xs">{s.seller}</TableCell>
               <TableCell>
                 <AddrLink address={s.payer} />
               </TableCell>
               <TableCell className="text-right font-mono text-xs text-primary">
                 {usdc(s.amount)} USDC
               </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {statusLabel(s.status)}
-                {s.reason ? ` — ${s.reason}` : ""}
+              <TableCell>
+                <StatusBadge status={s.status} />
+                {s.reason ? (
+                  <div className="mt-1 max-w-[22rem] text-[11px] text-muted-foreground">
+                    {s.reason}
+                  </div>
+                ) : null}
               </TableCell>
               <TableCell className="font-mono text-xs">
                 {s.latency_ms} ms
