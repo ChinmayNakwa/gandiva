@@ -13,7 +13,7 @@ import { Stat } from "@/components/stat";
 import { TaskForm, type RunForm } from "@/components/run/task-form";
 import { LiveLog } from "@/components/run/live-log";
 import { ReceiptTable } from "@/components/run/receipt-table";
-import { Explanation, ResultView } from "@/components/run/result-view";
+import { Explanation, QuoteView, ResultView } from "@/components/run/result-view";
 import { startRun } from "@/lib/api";
 import { EXAMPLE_TASKS } from "@/lib/examples";
 import { useInfo, useRun } from "@/lib/hooks";
@@ -34,6 +34,7 @@ export default function RunPage() {
     task: EXAMPLE_TASKS[0],
     budget: "0.05",
     maxConcurrency: 3,
+    dryRun: false,
     token: "",
   });
   const [runId, setRunId] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export default function RunPage() {
         task: form.task,
         budget: form.budget,
         maxConcurrency: form.maxConcurrency,
+        dryRun: form.dryRun,
         token: form.token,
       });
       setRunId(id);
@@ -93,7 +95,11 @@ export default function RunPage() {
       {run ? (
         <div className="mt-6 flex flex-col gap-6">
           <div className="grid gap-3 sm:grid-cols-4">
-            <Stat label="Run" value={run.id} hint={run.planner ?? ""} />
+            <Stat
+              label="Run"
+              value={run.id}
+              hint={[run.dryRun ? "dry run" : "", run.mode === "legacy" ? "built-in books pipeline" : (run.planner ?? "")].filter(Boolean).join(" · ")}
+            />
             <Stat
               label="State"
               value={
@@ -130,7 +136,18 @@ export default function RunPage() {
             </CardContent>
           </Card>
 
-          {run.result ? (
+          {run.quote ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Quote (dry run, nothing paid)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <QuoteView quote={run.quote} budget={run.budget} />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {run.result && !run.dryRun ? (
             <Card>
               <CardHeader>
                 <CardTitle>Result</CardTitle>

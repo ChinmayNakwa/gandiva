@@ -103,6 +103,34 @@ export interface RunResult {
   books: RunResultBook[];
 }
 
+/** Result of an agent run: a written answer plus named outputs the agent chose to hand back. */
+export interface AgentResult {
+  answer: string;
+  outputs: Record<string, unknown>;
+  turns?: number;
+  dryRun?: boolean;
+}
+
+export interface QuoteLine {
+  turn: number;
+  as: string;
+  service: string;
+  category: Category;
+  estimate: string;
+  purpose?: string;
+  skipped?: boolean;
+}
+
+export interface Quote {
+  lines: QuoteLine[];
+  total: string;
+  byCategory: Partial<Record<Category, string>>;
+  note: string;
+}
+
+export const isAgentResult = (r: RunResult | AgentResult): r is AgentResult =>
+  typeof (r as AgentResult).answer === "string" && "outputs" in r;
+
 export type RunStateName =
   | "running"
   | "completed"
@@ -118,8 +146,12 @@ export interface Run {
   state: RunStateName;
   log: string[];
   planner?: string;
+  /** agent = the LLM planned the run; legacy = built-in books pipeline (fallback). */
+  mode?: "agent" | "legacy";
+  dryRun?: boolean;
+  quote?: Quote;
   purchases: Purchase[];
-  result?: RunResult | null;
+  result?: RunResult | AgentResult | null;
   explanation?: string;
   spent?: string;
   remaining?: string;

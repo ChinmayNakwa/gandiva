@@ -4,12 +4,14 @@ import { PlayIcon, SquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { EXAMPLE_TASKS } from "@/lib/examples";
 
 export interface RunForm {
   task: string;
   budget: string;
   maxConcurrency: number;
+  dryRun: boolean;
   token: string;
 }
 
@@ -113,6 +115,18 @@ export function TaskForm({
         ) : null}
       </div>
 
+      <div className="flex items-center gap-2">
+        <Switch
+          id="dry"
+          size="sm"
+          checked={value.dryRun}
+          onCheckedChange={(checked) => set({ dryRun: checked })}
+        />
+        <Label htmlFor="dry" className="text-xs text-muted-foreground">
+          Dry run: plan and quote the cost, pay nothing
+        </Label>
+      </div>
+
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={!canStart || running}>
           {running ? (
@@ -121,7 +135,7 @@ export function TaskForm({
             </>
           ) : (
             <>
-              <PlayIcon className="size-4" /> Start run
+              <PlayIcon className="size-4" /> {value.dryRun ? "Get quote" : "Start run"}
             </>
           )}
         </Button>

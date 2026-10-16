@@ -55,6 +55,7 @@ export function startRun(body: {
   task: string;
   budget: string;
   maxConcurrency: number;
+  dryRun?: boolean;
   token?: string;
 }) {
   return get<{ runId: string }>("/buyer/run", {
@@ -67,6 +68,7 @@ export function startRun(body: {
       task: body.task,
       budget: body.budget,
       maxConcurrency: body.maxConcurrency,
+      dryRun: body.dryRun === true,
     }),
   });
 }
