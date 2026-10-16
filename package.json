@@ -21,10 +21,14 @@
     "judge:budget": "tsx scripts/judge/budget.ts",
     "judge:failure": "tsx scripts/judge/seller-failure.ts",
     "judge:junk": "tsx scripts/judge/junk.ts",
+    "judge:unconfirmed": "tsx scripts/judge/unconfirmed.ts",
     "judge:interop": "tsx scripts/judge/interop-seller.ts",
     "interop:ref-seller": "tsx scripts/interop/ref-seller.ts",
     "interop:ref-buyer": "tsx scripts/interop/ref-buyer.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:chain": "tsx scripts/dev/check-chain-lookup.ts"
   },
   "repository": {
     "type": "git",
@@ -55,6 +59,7 @@
     "concurrently": "^10.0.6",
     "express": "^5.3.0",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

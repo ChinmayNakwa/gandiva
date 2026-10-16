@@ -155,6 +155,7 @@ npm run task -- "From pages 1 to 4 of books.toscrape.com, find the three cheapes
 | Seller failure | `npm run judge:failure` | paid request for page 999: error back, no PAYMENT-RESPONSE, balance unchanged |
 | Junk output | `npm run judge:junk` | standard-SDK seller returns junk: paid, output rejected, reputation drops, buyer buys elsewhere |
 | Standard client | `npm run interop:ref-buyer` and `npm run judge:interop` | unmodified `@x402/fetch` pays our seller; our buyer pays an unmodified `@x402/express` seller |
+| Unconfirmed payment | `npm run judge:unconfirmed` (add `-- --expire` for the never-settles case, about 5 min) | buyer times out after signing: ledger shows `unconfirmed`, then the chain resolves it to `paid` with the tx hash (or to `failed, not charged` once the authorisation expires) |
 | Key hygiene | `gitleaks detect` | keys only in `.env` (gitignored); the web app only receives addresses; logs never print keys or signatures |
 
 To register your own reference seller, `POST /registry/services`:
@@ -171,11 +172,18 @@ To register your own reference seller, `POST /registry/services`:
 
 Then `POST /buyer/call {"serviceId":"ref-seller","input":{...}}` or `POST /buyer/buy {"category":"data","input":{...}}`.
 
+### Automated tests
+
+`npm test` runs 70+ offline unit tests (in-memory SQLite, no network, no keys): price check mismatches, budget under 50 parallel reservations, seller replay guard (serial and 5x parallel), the unconfirmed-payment paths, the chain resolver, the wallet spend cap, registry rules, the DB migration, schema validation and the task parser. `npm run check:chain` is a read-only check of the chain lookup against real Base Sepolia transactions.
+
 ## How the safety rules are enforced
 
 - **Budget**: every call must `reserve()` its amount in a shared `BudgetLedger` before signing. `spent + reserved + amount <= budget` is checked under a mutex, so parallel calls can never overspend. Failed calls release their reservation; settled calls commit it. Budget refusals are recorded in the ledger with the reason.
 - **Price check**: the 402's `accepts` must match the registry listing: scheme `exact`, same network, same token, same payTo, and amount no higher than the listed price. Otherwise Scout refuses without signing.
 - **Replay**: before verifying, the seller claims the EIP-3009 authorisation nonce with a unique-key insert. Copies, sequential or parallel, get `409`. USDC itself also rejects a reused nonce on-chain.
+- **Unknown outcomes are never guessed**: if the buyer signs and then gets no answer (timeout, dropped connection, or a 200 without a `PAYMENT-RESPONSE`), the row is `unconfirmed` and the budget stays spent. A background resolver asks USDC itself (`authorizationState`, plus the `AuthorizationUsed` event for the tx hash) every 15 s: used means `paid` with the real tx, unused after `validBefore` means `failed, not charged`. Rows recorded as not charged are re-checked until `validBefore` passes in case a seller settles late. `npm run reconcile` refuses to pass while any `unconfirmed` row exists.
+- **Wallet spend cap**: independent of per-run budgets, all runs and direct calls together may spend at most `SPEND_CAP_USDC` (default 0.5) per rolling `SPEND_CAP_WINDOW_MIN` (default 60) minutes; further payments are refused with `spend cap:` before anything is signed. `SPEND_CAP_USDC=0` turns it off. Current usage is in `/api/info`.
+- **Registry**: anyone can list a seller (`POST /registry/services`, 32 KB limit), but the built-in sellers cannot be overwritten, a listing can only be updated by its original `payTo`, and `DELETE` needs the `x-admin-token` header matching `ADMIN_TOKEN` (disabled when unset).
 - **No service, no charge**: the seller verifies, runs the handler with a timeout, validates its own output against its schema, and only then settles. Errors, timeouts and invalid output return an error without settling.
 - **Bad output**: Scout validates every 200 against the listed output schema (Ajv). Junk is recorded as `paid_output_rejected`, discarded, counts against the seller's reputation, and Scout tries the next seller if budget allows.
 - **Reputation**: success rate (clean paid calls / attempts), median latency and price per service, computed from the ledger. Ranking: optimistic score `(successes+1)/(attempts+1)` first, then price, then latency.
