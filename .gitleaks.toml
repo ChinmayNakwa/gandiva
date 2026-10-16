@@ -1,0 +1,10 @@
+title = "gandiva gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "evm-private-key"
+description = "Raw 32-byte hex private key"
+regex = '''(?i)(private[_-]?key|seller_key_[a-z_]+)\s*[=:]\s*["']?0x[0-9a-f]{64}'''
+tags = ["key", "evm"]
