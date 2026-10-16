@@ -5,7 +5,7 @@ A marketplace where AI agents hire other agents and pay **per request in USDC** 
 - **Registry**: sellers list services (name, category, endpoint, price in USDC units, network, payTo, input/output JSON Schema, description). Search over HTTP or on the web page.
 - **Sellers** (one per category, plus demo bad actors): `shelf-scraper` (scraping), `fx-rates` (data), `hindi-summary` (inference, Ollama LLM).
 - **Buyer agent "Scout"**: takes a plain-language task and a budget, picks sellers by reputation and price, pays per request, validates and combines results, and explains what it bought, from whom, why, and at what cost.
-- **Ledger + dashboard**: every attempted call with status, amounts, tx hash (explorer link) and latency, plus a seller-side sales view.
+- **Ledger + web app** (Next.js): every attempted call with status, amounts, tx hash (explorer link) and latency, plus a seller-side sales view.
 - **Payment safety**: budget reservations under a mutex (safe at any concurrency), strict price/token/network/payTo check, single-use authorisations, no settlement unless the seller delivered valid output, schema checks on every response, and reputation that punishes junk.
 
 ## Architecture: where payments are checked, signed, verified, and settled
@@ -37,13 +37,15 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  subgraph gandiva [One Node process behind one HTTPS tunnel]
+  Tunnel["HTTPS tunnel (ngrok or cloudflared)"] --> Web
+  Web["Next.js web app :3000 - pages + proxy"]
+  subgraph gandiva [Hono API :4021]
     Registry["/registry - services, ledger, sales"]
     Sellers["/sellers/* - paidRoute x402 sellers"]
     Buyer["/buyer - Scout agent + SafePayer"]
-    Dash["/ - dashboard"]
     DB[(SQLite)]
   end
+  Web -->|"rewrites /registry /buyer /sellers /api /healthz"| gandiva
   Buyer --> Registry
   Buyer -->|x402 v2| Sellers
   Sellers --> Facilitator[x402.org facilitator]
@@ -64,26 +66,43 @@ Code map:
 | Registry, ledger, reputation | `src/registry/store.ts`, `src/registry/routes.ts` |
 | Sellers | `src/sellers/index.ts`, `src/sellers/books.ts`, `src/sellers/fx.ts` |
 | Buyer agent (planner, ranking, failover, receipt) | `src/buyer/planner.ts`, `src/buyer/scout.ts` |
-| Dashboard | `public/index.html` |
+| API app (Hono) | `src/server.ts` |
+| Web app (Next.js 16, Tailwind v4): pages `/`, `/marketplace`, `/run`, `/ledger`, `/sales` | `client/` |
+| API proxy rewrites | `client/next.config.ts` |
+| One-command start (tunnel + API + web) | `scripts/start.ts` |
 
 ## Quick start
 
-Requirements: Node 20+, optionally [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) for public HTTPS, and [Ollama](https://ollama.com) (local `ollama pull qwen2.5:7b`, or Ollama cloud via `OLLAMA_HOST=https://ollama.com` + `OLLAMA_API_KEY`).
+Requirements: Node 20+, a tunnel for public HTTPS ([ngrok](https://ngrok.com/download) with a free authtoken, or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)), and [Ollama](https://ollama.com) (local `ollama pull qwen2.5:7b`, or Ollama cloud via `OLLAMA_HOST=https://ollama.com` + `OLLAMA_API_KEY`).
 
 ```bash
 npm install
-npm run wallets:new        # fresh testnet wallets into .env (gitignored); prints addresses only
+cd client && npm install && cd ..   # Next.js web app dependencies (not `npm --prefix client install`, which adds the root package as a dependency)
+cp .env.example .env
+npm run wallets:new           # fresh testnet wallets into .env (gitignored); prints addresses only
 # fund the buyer address with testnet USDC at https://faucet.circle.com (Base Sepolia). No ETH needed.
-npm start                  # one command: cloudflared tunnel + registry + sellers + buyer + dashboard
+npm start                     # one command: tunnel + Hono API (:4021) + Next.js web app (:3000)
 ```
 
-`npm start` opens a cloudflared quick tunnel, then starts everything with that public URL, so every registry listing and 402 `resource.url` is publicly reachable. If `PUBLIC_BASE_URL` is set (ngrok or a named tunnel), it uses that instead.
+Two processes run behind one public URL:
+
+| Process | Port | Env var | Role |
+|---|---|---|---|
+| Next.js web app (`client/`) | 3000 | `WEB_PORT` | Public front door and tunnel target. Serves the pages and proxies `/registry`, `/buyer`, `/sellers`, `/api` and `/healthz` to the API. |
+| Hono API (`src/server.ts`) | 4021 | `PORT` (or `API_PORT`) | Registry, sellers, buyer agent, ledger. Internal only. |
+
+`npm start` opens a tunnel to port 3000 (`TUNNEL=auto` tries cloudflared, then ngrok; set `TUNNEL=ngrok` or `TUNNEL=cloudflared` to pick one, and `NGROK_AUTHTOKEN` for ngrok). It then starts both processes with that public URL, so every registry listing and 402 `resource.url` is publicly reachable. If `PUBLIC_BASE_URL` is set, it skips the tunnel and uses that. With `TUNNEL=none` everything runs on `http://localhost:3000`. The x402 headers (`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`) and status codes such as 402 pass through the Next.js proxy unchanged.
+
+For development without a tunnel: `npm run dev:all` (API and web app with reload), or `npm run dev:api` and `npm run dev:web` separately. The CLI scripts (`npm run task`, the judge pack, `reconcile`) talk to the API directly on `http://localhost:4021`.
+
+ngrok's free tier shows a warning page to browsers on first visit; click "Visit Site". curl and node clients are not affected.
 
 ## Public URLs (all on one host)
 
 | What | Path |
 |---|---|
-| Dashboard | `/` |
+| Web app: home, marketplace, run a task, ledger, sales | `/`, `/marketplace`, `/run`, `/ledger`, `/sales` |
+| Health check | `/healthz` |
 | Registry API | `/registry/services?category=&maxPrice=&sort=rank\|price\|latency` |
 | Ledger API | `/registry/ledger` |
 | Seller sales | `/registry/sales` |
@@ -128,7 +147,7 @@ npm run task -- "From pages 1 to 4 of books.toscrape.com, find the three cheapes
 
 | Test | Command | What it shows |
 |---|---|---|
-| Happy path | `npm run task -- "<task>" 0.05 3` or the dashboard | 3+ paid calls, each with its own tx to the seller's payTo |
+| Happy path | `npm run task -- "<task>" 0.05 3` or the `/run` page | 3+ paid calls, each with its own tx to the seller's payTo |
 | Reconciliation | `npm run reconcile` | per-tx check (buyer to payTo, exact amount) and a full log scan of USDC out of the buyer, both equal to the ledger total (payments made directly by our test scripts are listed separately from the seller sales log) |
 | Budget | `npm run judge:budget` | 0.012 budget at max_concurrency 1 and 5: never overspends, stops and says how much more it needs |
 | Price check | `npm run judge:price` | standard-SDK sellers asking 10x, or naming another payTo, are refused with 0 paid |
@@ -136,7 +155,7 @@ npm run task -- "From pages 1 to 4 of books.toscrape.com, find the three cheapes
 | Seller failure | `npm run judge:failure` | paid request for page 999: error back, no PAYMENT-RESPONSE, balance unchanged |
 | Junk output | `npm run judge:junk` | standard-SDK seller returns junk: paid, output rejected, reputation drops, buyer buys elsewhere |
 | Standard client | `npm run interop:ref-buyer` and `npm run judge:interop` | unmodified `@x402/fetch` pays our seller; our buyer pays an unmodified `@x402/express` seller |
-| Key hygiene | `gitleaks detect` | keys only in `.env` (gitignored); the dashboard only receives addresses; logs never print keys or signatures |
+| Key hygiene | `gitleaks detect` | keys only in `.env` (gitignored); the web app only receives addresses; logs never print keys or signatures |
 
 To register your own reference seller, `POST /registry/services`:
 
