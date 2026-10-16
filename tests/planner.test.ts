@@ -31,3 +31,12 @@ describe("parseRules (numbers judges change live never depend on the LLM)", () =
     expect(r.currency).toBeUndefined();
   });
 });
+
+describe("beyondBooks (what the AI-off fallback must refuse)", () => {
+  it("flags weather and sentiment parts but not plain book tasks", async () => {
+    const { beyondBooks } = await import("../src/buyer/scout.js");
+    expect(beyondBooks("Check the weather in Tokyo, then the two cheapest books")).toBe("weather");
+    expect(beyondBooks("three cheapest books, and say whether each description sounds positive or negative")).toBe("positive");
+    expect(beyondBooks("From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.")).toBeUndefined();
+  });
+});

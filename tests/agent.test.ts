@@ -226,15 +226,34 @@ describe("agent loop", () => {
     expect(t.payer.calls).toEqual([]);
   });
 
+  it("asks again once when the LLM returns nothing or stalls, then carries on", async () => {
+    const t = setup([new Error("ollama returned an empty message"), bookRounds[0]]);
+    await t.go();
+    expect(t.llm.used()).toBeGreaterThanOrEqual(2);
+    expect(t.run.log.join(" ")).toMatch(/did not answer.*trying once more/);
+    expect(t.payer.calls.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a reply that files a paid call under tools", async () => {
+    const t = setup([
+      { calls: [{ service: "city-info", input: { name: "Tokyo" }, as: "c" }] },
+      { tools: [{ service: "sentiment", input: { texts: ["$c.conditions"] }, as: "s" }], final: undefined },
+      { final: { answer: "done", outputs: { s: "$s" } } },
+    ]);
+    await t.go();
+    expect(t.run.state).toBe("completed");
+    expect(t.payer.calls.map((c) => c.id)).toEqual(["city-info", "sentiment"]);
+  });
+
   it("hands back to the caller when the LLM is down before anything is bought", async () => {
-    const t = setup([new Error("connect ECONNREFUSED")]);
+    const t = setup([new Error("connect ECONNREFUSED"), new Error("connect ECONNREFUSED")]);
     const out = await t.go();
     expect(out).toMatchObject({ handled: false });
     expect((out as any).reason).toMatch(/LLM is unavailable/);
   });
 
   it("keeps what it paid for when the LLM dies mid-run, and does not hand back", async () => {
-    const t = setup([bookRounds[0], new Error("socket hang up")]);
+    const t = setup([bookRounds[0], new Error("socket hang up"), new Error("socket hang up")]);
     const out = await t.go();
     expect(out).toEqual({ handled: true });
     expect(t.run.state).toBe("partial");

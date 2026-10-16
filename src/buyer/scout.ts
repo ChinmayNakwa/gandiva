@@ -96,6 +96,12 @@ export function startTask(opts: StartOptions): RunState {
 
 const looksLikeBooks = (task: string) => /toscrape|(^|[^a-z])books?([^a-z]|$)/i.test(task);
 
+/** Parts of a task the built-in books pipeline cannot do; it must not quietly answer only the books part. */
+export const beyondBooks = (task: string): string | undefined => {
+  const hit = task.match(/weather|temperature|forecast|climate|wind speed|time ?zone|population|sentiment|positive|negative|tone of|mood/i);
+  return hit?.[0].toLowerCase();
+};
+
 async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]>) {
   const budget = new BudgetLedger(BigInt(run.budget));
   const ctx = new Ctx(run, budget, run.maxConcurrency, pay);
@@ -103,7 +109,7 @@ async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]
 
   if (mode !== "legacy") {
     const outcome = await runAgent(ctx, {
-      chat: (messages) => chat(messages, { json: true, timeoutMs: 90_000, temperature: 0 }),
+      chat: (messages) => chat(messages, { json: true, timeoutMs: 60_000, temperature: 0 }),
       services: () => searchServices(),
     });
     if (outcome.handled) {
@@ -113,9 +119,10 @@ async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]
       return;
     }
     ctx.log(`agent could not plan this task: ${outcome.reason}`);
-    if (mode === "agent" || !looksLikeBooks(run.task)) {
+    const extra = mode === "auto" ? beyondBooks(run.task) : undefined;
+    if (mode === "agent" || !looksLikeBooks(run.task) || extra) {
       run.state = "failed";
-      run.explanation = `Nothing was bought: ${outcome.reason}.${mode === "auto" ? " The built-in fallback only understands book-price tasks on books.toscrape.com." : ""}`;
+      run.explanation = `Nothing was bought: ${outcome.reason}.${mode === "auto" ? (extra ? ` The built-in fallback only does book prices and Hindi summaries, so it would silently skip the "${extra}" part of your task; try again when the planner LLM is back.` : " The built-in fallback only understands book-price tasks on books.toscrape.com.") : ""}`;
       run.spent = "0";
       run.remaining = run.budget;
       run.finishedAt = new Date().toISOString();

@@ -46,10 +46,49 @@ export function extractJson(raw: string): unknown {
   }
 }
 
-export function parseRound(raw: string): { ok: true; round: Round } | { ok: false; error: string } {
+const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * gpt-oss often files a step under the wrong key: a paid call inside "tools" (as {"tool": "<service>"} or with no
+ * "tool" at all), or select/calc inside "calls". It also writes item fields with a "$" inside compute expressions
+ * ("$price_gbp * $fx.rate"). Putting these right is safe because nothing runs until the plan validates.
+ * `known` are result names that already exist from earlier turns.
+ */
+export function normaliseRound(json: unknown, known: Iterable<string> = []): unknown {
+  if (!isRecord(json)) return json;
+  const calls: Record<string, unknown>[] = [];
+  const tools: Record<string, unknown>[] = [];
+  const asCall = (step: Record<string, unknown>, service: unknown) => ({ ...step, service, input: isRecord(step.input) ? step.input : isRecord(step.args) ? step.args : {} });
+  const asTool = (step: Record<string, unknown>, tool: string) => ({ ...step, tool, args: isRecord(step.args) ? step.args : isRecord(step.input) ? step.input : {} });
+  const toolName = (v: unknown) => (typeof v === "string" && (TOOL_NAMES as readonly string[]).includes(v.trim().toLowerCase()) ? v.trim().toLowerCase() : undefined);
+  for (const step of Array.isArray(json.calls) ? json.calls : []) {
+    if (!isRecord(step)) calls.push(step);
+    else if (toolName(step.service) && !step.tool) tools.push(asTool(step, toolName(step.service)!));
+    else calls.push(step);
+  }
+  for (const step of Array.isArray(json.tools) ? json.tools : []) {
+    if (!isRecord(step)) tools.push(step);
+    else if (toolName(step.tool)) tools.push(asTool(step, toolName(step.tool)!));
+    else if (typeof step.service === "string" && !step.tool) calls.push(asCall(step, step.service));
+    else if (typeof step.tool === "string") calls.push(asCall(step, step.tool)); // a service name in the "tool" field
+    else tools.push(step);
+  }
+  // "$price_gbp" in a compute expression is an item field unless it names a result.
+  const roots = new Set([...known, ...[...calls, ...tools].map((s) => String(s.as ?? "").replace(/^\$/, ""))]);
+  for (const t of tools) {
+    if (t.tool !== "select" || !isRecord(t.args) || !isRecord(t.args.compute)) continue;
+    const fixed = Object.fromEntries(
+      Object.entries(t.args.compute).map(([k, expr]) => [k, typeof expr === "string" ? expr.replace(/\$([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_.\[])/g, (m, name) => (roots.has(name) ? m : name)) : expr]),
+    );
+    t.args = { ...t.args, compute: fixed };
+  }
+  return { ...json, calls, tools };
+}
+
+export function parseRound(raw: string, known: Iterable<string> = []): { ok: true; round: Round } | { ok: false; error: string } {
   let json: unknown;
   try {
-    json = extractJson(raw);
+    json = normaliseRound(extractJson(raw), known);
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "the reply is not JSON" };
   }
@@ -117,7 +156,7 @@ export function validateRound(round: Round, env: ValidationEnv): Validated {
   const taken = new Set(env.store.keys());
   const thisRound = new Set<string>();
   const claim = (name: string, what: string) => {
-    if (taken.has(name) || thisRound.has(name)) issues.push(`${what}: the name "${name}" is already used; pick a new "as" name`);
+    if (taken.has(name) || thisRound.has(name)) issues.push(`${what}: the name "${name}" is already used${taken.has(name) ? " by a result you already have: use $" + name + " instead of repeating the call, or" : ";"} pick a new "as" name`);
     thisRound.add(name);
   };
 

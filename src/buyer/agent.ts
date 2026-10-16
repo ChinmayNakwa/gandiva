@@ -95,14 +95,20 @@ export async function runAgent(ctx: Ctx, deps: AgentDeps): Promise<AgentOutcome>
   /** Ask the model for one turn; if the reply is unusable, show it what is wrong and ask once more. */
   async function askTurn(turn: number): Promise<{ ok: true; v: Validated } | { ok: false; reason: string }> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      let raw: string;
-      try {
-        raw = await deps.chat(messages);
-      } catch (err: any) {
-        return { ok: false, reason: `the planner LLM is unavailable (${err?.message ?? err})` };
+      let raw: string | undefined;
+      let lastError: any;
+      // gpt-oss sometimes returns an empty message or stalls once; one more try is cheap and nothing has been paid yet.
+      for (let tries = 0; tries < 2 && raw === undefined; tries++) {
+        try {
+          raw = await deps.chat(messages);
+        } catch (err: any) {
+          lastError = err;
+          if (tries === 0) ctx.log(`turn ${turn}: the planner LLM did not answer (${err?.message ?? err}); trying once more`);
+        }
       }
+      if (raw === undefined) return { ok: false, reason: `the planner LLM is unavailable (${lastError?.message ?? lastError})` };
       messages.push({ role: "assistant", content: raw });
-      const parsed = parseRound(raw);
+      const parsed = parseRound(raw, store.keys());
       const v = parsed.ok ? validateRound(parsed.round, { groups, all: deps.services(), store, callsLeft: MAX_PAID_CALLS - callsUsed, started: callsUsed > 0 || store.size > 0 }) : undefined;
       const issues = parsed.ok ? v!.issues : [parsed.error];
       if (!issues.length) return { ok: true, v: v! };

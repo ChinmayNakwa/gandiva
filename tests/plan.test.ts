@@ -28,8 +28,37 @@ describe("parseRound", () => {
     expect(parseRound("I will now buy things").ok).toBe(false);
     const bad = parseRound('{"calls":[{"input":{}}]}');
     expect(!bad.ok && bad.error).toMatch(/calls\.0\.service/);
-    expect(parseRound('{"tools":[{"tool":"hack","as":"x"}]}').ok).toBe(false);
     expect(parseRound('{"calls":[{"service":"x","as":"bad name"}]}').ok).toBe(false);
+  });
+});
+
+describe("parseRound: steps filed under the wrong key", () => {
+  it("moves a paid call written inside tools to calls", () => {
+    const r = parse({ tools: [{ service: "hindi-summary", input: { texts: ["a"] }, as: "s" }] });
+    expect(r.tools).toEqual([]);
+    expect(r.calls).toMatchObject([{ service: "hindi-summary", as: "s", input: { texts: ["a"] } }]);
+  });
+  it("moves select/calc written inside calls to tools, keeping the input as args", () => {
+    const r = parse({ calls: [{ service: "select", input: { from: "$p1.books", limit: 2 }, as: "top" }, { service: "fx-rates", input: { from: "GBP", to: "INR" }, as: "fx" }] });
+    expect(r.calls.map((c) => c.service)).toEqual(["fx-rates"]);
+    expect(r.tools).toMatchObject([{ tool: "select", as: "top", args: { from: "$p1.books", limit: 2 } }]);
+  });
+  it("accepts tool names in other letter case, and still rejects invented tools", () => {
+    expect(parse({ tools: [{ tool: " Select ", as: "x", args: {} }] }).tools[0].tool).toBe("select");
+    expect(parseRound('{"tools":[{"tool":"hack","as":"x"}]}').ok).toBe(true); // read as a call to a service named hack...
+    expect(validateRound(parse({ tools: [{ tool: "hack", as: "x" }] }), env()).issues.join()).toMatch(/unknown service "hack"/); // ...which is refused
+  });
+  it("reads a service name written in the tool field as a call", () => {
+    const r = parse({ tools: [{ tool: "hindi-summary", as: "h", args: { texts: ["a"] } }] });
+    expect(r.tools).toEqual([]);
+    expect(r.calls).toMatchObject([{ service: "hindi-summary", as: "h", input: { texts: ["a"] } }]);
+  });
+  it("treats $field in a compute expression as an item field, but keeps real references", () => {
+    const r = parse({
+      calls: [{ service: "fx-rates", input: { from: "GBP", to: "INR" }, as: "fx" }],
+      tools: [{ tool: "select", as: "top", args: { from: "$p1.books", compute: { inr: "$price_gbp * $fx.rate", total: "$price_gbp * $fx" } } }],
+    });
+    expect(r.tools[0].args.compute).toEqual({ inr: "price_gbp * $fx.rate", total: "price_gbp * $fx" });
   });
 });
 
