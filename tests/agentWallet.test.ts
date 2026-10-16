@@ -261,3 +261,53 @@ describe("ledger by wallet", () => {
     expect(((await (await registry.request("/ledger")).json()) as any).entries).toHaveLength(2);
   });
 });
+
+describe("buyer token: signing in never unlocks the shared wallet", () => {
+  it("/buy and /call still need the token, signed in or not", async () => {
+    config.buyerToken = "secret-token";
+    for (const path of ["/buy", "/call"]) {
+      expect((await buyer.request(path, json(aliceCookie, { category: "data", serviceId: "x" }))).status, path).toBe(401);
+      expect((await buyer.request(path, json(undefined, { category: "data", serviceId: "x" }))).status, path).toBe(401);
+    }
+  });
+});
+
+describe("withdrawals of unknown outcome", () => {
+  const dies = () => ({ settle: vi.fn(async () => Promise.reject(new Error("socket hang up"))) });
+  const unknownRow = async () => {
+    await expect(wallet.withdraw(alice.address, 1000n, { settler: dies() as any, balance: async () => 5000n })).rejects.toThrow(/could not confirm/);
+    return db.prepare("SELECT * FROM withdrawals ORDER BY id DESC LIMIT 1").get() as any;
+  };
+
+  it("keep the signed authorisation so the chain can settle them later", async () => {
+    const w = await unknownRow();
+    expect(w.status).toBe("unknown");
+    expect(w.auth_nonce).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(w.valid_before).toBeGreaterThan(Date.now() / 1000);
+  });
+
+  it("become settled when the authorisation was used on chain", async () => {
+    const w = await unknownRow();
+    const lookup = vi.fn(async (_a: { from: string; nonce: string }) => ({ state: "used" as const, txHash: "0x" + "ef".repeat(32), amount: 1000n, to: alice.address }));
+    expect(await wallet.resolveUnknownWithdrawals(lookup)).toBe(1);
+    expect(lookup.mock.calls[0][0]).toMatchObject({ from: w.agent_address, nonce: w.auth_nonce });
+    expect(db.prepare("SELECT status, tx_hash FROM withdrawals WHERE id = ?").get(w.id)).toEqual({ status: "settled", tx_hash: "0x" + "ef".repeat(32) });
+  });
+
+  it("become failed once the authorisation expired unused, and stay unknown while it can still be used", async () => {
+    const w = await unknownRow();
+    expect(await wallet.resolveUnknownWithdrawals(async () => ({ state: "unused", expired: false }))).toBe(0);
+    expect((db.prepare("SELECT status FROM withdrawals WHERE id = ?").get(w.id) as any).status).toBe("unknown");
+    expect(await wallet.resolveUnknownWithdrawals(async () => ({ state: "unused", expired: true }))).toBe(1);
+    expect((db.prepare("SELECT status FROM withdrawals WHERE id = ?").get(w.id) as any).status).toBe("failed");
+  });
+
+  it("a signing error is recorded as failed (nothing left the server), not unknown", async () => {
+    const payer = wallet.getAgentPayer(alice.address);
+    vi.spyOn(payer, "sign").mockRejectedValueOnce(new Error("bad key"));
+    const settler = dies();
+    await expect(wallet.withdraw(alice.address, 1000n, { settler: settler as any, balance: async () => 5000n })).rejects.toThrow(/Nothing was moved/);
+    expect(settler.settle).not.toHaveBeenCalled();
+    expect(wallet.listWithdrawals(payer.address).map((w) => w.status)).toEqual(["failed"]);
+  });
+});

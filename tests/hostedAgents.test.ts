@@ -40,7 +40,8 @@ const ORIGIN = "http://localhost:3000";
 const KEY = "ab".repeat(32);
 const alice = privateKeyToAccount(generatePrivateKey());
 const bob = privateKeyToAccount(generatePrivateKey());
-const OLLAMA_KEY = "sk-secret-ollama-key-123";
+// A made-up key, generated per run so no key-like string lives in the repo (gitleaks runs over it).
+const OLLAMA_KEY = `test-${generatePrivateKey().slice(2, 26)}`;
 
 async function loginCookie(account: typeof alice) {
   const { nonce } = (await (await auth.request("/nonce")).json()) as { nonce: string };

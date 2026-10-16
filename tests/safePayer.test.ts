@@ -129,3 +129,53 @@ describe("SafePayer: parallel calls respect the run budget", () => {
     expect(budget.spent).toBe(5_000n);
   });
 });
+
+describe("SafePayer: hostile sellers before anything is signed", () => {
+  it.each([
+    ["a non-integer amount", { amount: "1.5" }],
+    ["a missing payTo", { payTo: undefined }],
+    ["a missing asset", { asset: undefined }],
+  ])("a 402 with %s is refused, not a crash", async (_, over) => {
+    vi.stubGlobal("fetch", vi.fn(async () => challenge402(accept(over))));
+    const r = await payer.call(service(), {}, { budget: new BudgetLedger(10_000n) });
+    expect(r.status).toBe("refused");
+    expect(r.reason).toMatch(/price check/);
+    expect(row(r.ledgerId).status).toBe("refused");
+  });
+
+  it("a 402 whose accepts is not a list is refused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ x402Version: 2, accepts: { amount: "1000" } }, 402)));
+    const r = await payer.call(service(), {}, { budget: new BudgetLedger(10_000n) });
+    expect(r.status).toBe("refused");
+    expect(r.reason).toMatch(/not a list/);
+  });
+
+  it("never follows a redirect (it could point at an internal address)", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(init.redirect).toBe("manual");
+      return new Response(null, { status: 302, headers: { Location: "http://169.254.169.254/latest/meta-data/" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await payer.call(service(), {}, { budget: new BudgetLedger(10_000n) });
+    expect(r.status).toBe("failed_not_charged");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an endpoint that now points at a private address, without calling it", async () => {
+    const { config } = await import("../src/config.js");
+    const before = process.env.ALLOW_PRIVATE_ENDPOINTS;
+    process.env.ALLOW_PRIVATE_ENDPOINTS = "false";
+    try {
+      expect(config.allowPrivateEndpoints).toBe(false);
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const r = await payer.call(service({ endpoint: "http://169.254.169.254/latest" }), {}, { budget: new BudgetLedger(10_000n) });
+      expect(r.status).toBe("refused");
+      expect(r.reason).toMatch(/endpoint guard: .*private/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (before === undefined) delete process.env.ALLOW_PRIVATE_ENDPOINTS;
+      else process.env.ALLOW_PRIVATE_ENDPOINTS = before;
+    }
+  });
+});
