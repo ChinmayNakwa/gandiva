@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gandiva - Pay-per-call Agent Economy</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --acc:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --gray:#6e7681; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex; gap:24px; align-items:center; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header .meta { color:var(--muted); font-size:12px; }
+  nav { display:flex; gap:4px; padding:0 24px; border-bottom:1px solid var(--line); }
+  nav button { background:none; border:none; color:var(--muted); padding:12px 14px; cursor:pointer; font-size:14px; border-bottom:2px solid transparent; }
+  nav button.active { color:var(--text); border-color:var(--acc); }
+  main { padding:20px 24px; }
+  .hidden { display:none; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size:12px; }
+  .chip { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; white-space:nowrap; }
+  .paid { background:#12341f; color:var(--ok); } .paid_output_rejected { background:#3a2d0b; color:var(--warn); }
+  .refused { background:#3b1418; color:var(--bad); } .failed_not_charged { background:#262b33; color:var(--muted); }
+  .cat { background:#1c2a3f; color:var(--acc); }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin-bottom:14px; }
+  label { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:12px; }
+  input, select, textarea { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; }
+  textarea { width:100%; min-height:70px; }
+  button.primary { background:#238636; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-weight:600; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  .card h3 { margin:0 0 4px; font-size:15px; display:flex; justify-content:space-between; gap:8px; }
+  .muted { color:var(--muted); }
+  .stats { display:flex; gap:16px; margin-top:10px; font-size:12px; }
+  .stats b { display:block; font-size:15px; color:var(--text); }
+  .bar { height:4px; background:var(--line); border-radius:2px; margin-top:8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:var(--ok); }
+  .summary { display:flex; gap:24px; margin-bottom:14px; flex-wrap:wrap; }
+  .summary div { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+  .summary b { display:block; font-size:18px; }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; white-space:pre-wrap; font-size:12px; max-height:360px; overflow:auto; }
+  a { color:var(--acc); text-decoration:none; }
+  .examples button { margin:0 6px 6px 0; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gandiva <span class="muted" style="font-weight:400">agents hire agents, pay per call</span></h1>
+  <div class="meta" id="info">loading...</div>
+</header>
+<nav>
+  <button data-tab="market" class="active">Marketplace</button>
+  <button data-tab="run">Run task</button>
+  <button data-tab="ledger">Ledger</button>
+  <button data-tab="sales">Seller sales</button>
+</nav>
+<main>
+  <section id="market">
+    <div class="row">
+      <label>Category<select id="f-cat"><option value="">all</option><option>scraping</option><option>data</option><option>inference</option></select></label>
+      <label>Max price (USDC)<input id="f-max" type="number" step="0.001" min="0" placeholder="any" /></label>
+      <label>Sort<select id="f-sort"><option value="rank">reputation (buyer's order)</option><option value="price">price</option><option value="latency">latency</option></select></label>
+      <button class="ghost" onclick="loadMarket()">Search</button>
+      <span class="muted">API: <a id="api-link" class="mono" target="_blank" href="/registry/services">/registry/services</a></span>
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="run" class="hidden">
+    <div class="examples muted">Examples:
+      <button class="ghost" data-ex="From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.">1. cheapest 5-star, INR</button>
+      <button class="ghost" data-ex="From pages 2 to 3 of books.toscrape.com, find the two most expensive 1-star books, give their prices in euros, and summarise each description in Hindi.">2. priciest 1-star, EUR</button>
+      <button class="ghost" data-ex="From pages 5 to 6 of books.toscrape.com, find the four cheapest books rated at least 4 stars, give their prices in yen, and summarise each description in Hindi.">3. cheapest 4+ star, JPY</button>
+    </div>
+    <textarea id="task"></textarea>
+    <div class="row" style="margin-top:10px">
+      <label>Budget (USDC)<input id="budget" type="number" step="0.001" value="0.05" /></label>
+      <label>max_concurrency<input id="conc" type="number" min="1" max="10" value="3" /></label>
+      <label id="tok-wrap" class="hidden">Buyer token<input id="tok" type="password" /></label>
+      <button class="primary" id="go">Run Scout</button>
+      <span id="run-state" class="muted"></span>
+    </div>
+    <div class="grid2">
+      <div><h3>Live log</h3><pre id="log"></pre></div>
+      <div><h3>Result</h3><div id="result"></div></div>
+    </div>
+    <h3>Receipt: what Scout bought, from whom, why, and at what cost</h3>
+    <div id="receipt"></div>
+    <pre id="explain" class="hidden"></pre>
+  </section>
+
+  <section id="ledger" class="hidden">
+    <div class="summary" id="ledger-summary"></div>
+    <div class="row"><label>Run<select id="l-run"><option value="">all runs</option></select></label><button class="ghost" onclick="loadLedger()">Refresh</button><span class="muted">auto-refreshes every 4s</span></div>
+    <table><thead><tr><th>Time</th><th>Buyer</th><th>Seller (payTo)</th><th>Service</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Tx</th><th>Status</th><th>Latency</th><th>Reason</th></tr></thead><tbody id="ledger-body"></tbody></table>
+  </section>
+
+  <section id="sales" class="hidden">
+    <p class="muted">Seller-side view: every payment our sellers received or refused, from any x402 client (including standard SDK clients).</p>
+    <table><thead><tr><th>Time</th><th>Seller</th><th>Payer</th><th>Amount</th><th>Tx</th><th>Status</th><th>Latency</th><th>Reason</th></tr></thead><tbody id="sales-body"></tbody></table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const usdc = (u) => (Number(u) / 1e6).toFixed(6).replace(/0{1,3}$/, "");
+const short = (a) => a ? a.slice(0, 6) + "..." + a.slice(-4) : "";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const chip = (s) => `<span class="chip ${s}">${s === "paid_output_rejected" ? "paid, output rejected" : s === "failed_not_charged" ? "failed, not charged" : s}</span>`;
+const txLink = (h) => h ? `<a class="mono" target="_blank" href="https://sepolia.basescan.org/tx/${h}">${short(h)}</a>` : "";
+let info = {};
+
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === b));
+  document.querySelectorAll("main section").forEach((s) => s.classList.toggle("hidden", s.id !== b.dataset.tab));
+  if (b.dataset.tab === "ledger") loadLedger();
+  if (b.dataset.tab === "sales") loadSales();
+  if (b.dataset.tab === "market") loadMarket();
+});
+document.querySelectorAll("[data-ex]").forEach((b) => b.onclick = () => $("task").value = b.dataset.ex);
+$("task").value = document.querySelector("[data-ex]").dataset.ex;
+
+async function loadInfo() {
+  info = await (await fetch("/api/info")).json();
+  $("info").innerHTML = `network <span class="mono">${info.network}</span> &middot; USDC <span class="mono">${short(info.asset)}</span> &middot; buyer <a class="mono" target="_blank" href="https://sepolia.basescan.org/address/${info.buyer}#tokentxns">${short(info.buyer)}</a> &middot; LLM ${esc(info.llm.model)} ${info.llm.available ? "online" : "<span style='color:var(--warn)'>offline</span>"}`;
+  $("tok-wrap").classList.toggle("hidden", !info.buyerTokenRequired);
+}
+
+async function loadMarket() {
+  const q = new URLSearchParams();
+  if ($("f-cat").value) q.set("category", $("f-cat").value);
+  if ($("f-max").value) q.set("maxPrice", String(Math.round(Number($("f-max").value) * 1e6)));
+  q.set("sort", $("f-sort").value);
+  const url = "/registry/services?" + q;
+  $("api-link").href = url; $("api-link").textContent = url;
+  const { services } = await (await fetch(url)).json();
+  $("cards").innerHTML = services.map((s) => {
+    const r = s.reputation;
+    return `<div class="card">
+      <h3><span>${esc(s.name)}</span><span class="chip cat">${s.category}</span></h3>
+      <div class="muted">${esc(s.description)}</div>
+      <div class="stats">
+        <div><b>${usdc(s.price)}</b>USDC / call</div>
+        <div><b>${r.attempts ? Math.round(r.successRate * 100) + "%" : "new"}</b>success (${r.successes}/${r.attempts})</div>
+        <div><b>${r.medianLatencyMs ?? "-"}</b>median ms</div>
+      </div>
+      <div class="bar"><span style="width:${Math.round(r.score * 100)}%"></span></div>
+      <div class="mono muted" style="margin-top:8px">${s.method} ${esc(s.endpoint)}<br/>payTo ${short(s.payTo)} &middot; ${s.network}</div>
+    </div>`;
+  }).join("") || "<p class='muted'>No services match.</p>";
+}
+
+async function loadLedger() {
+  const run = $("l-run").value;
+  const data = await (await fetch("/registry/ledger" + (run ? "?runId=" + run : ""))).json();
+  const e = data.entries;
+  const count = (s) => e.filter((x) => x.status === s).length;
+  $("ledger-summary").innerHTML = `<div><b>${data.totalPaidUsdc}</b>USDC paid (${data.totalPaid} units)</div>
+    <div><b>${count("paid")}</b>paid</div><div><b>${count("paid_output_rejected")}</b>paid, output rejected</div>
+    <div><b>${count("refused")}</b>refused</div><div><b>${count("failed_not_charged")}</b>failed, not charged</div>`;
+  $("ledger-body").innerHTML = e.map((r) => `<tr>
+    <td class="mono">${r.ts.slice(5, 19).replace("T", " ")}</td><td class="mono">${short(r.buyer)}</td><td class="mono">${short(r.seller)}</td>
+    <td>${esc(r.service_name)}</td><td>${r.listed_usdc}</td><td>${r.asked_usdc ?? ""}</td><td>${r.paid_usdc}</td>
+    <td>${txLink(r.tx_hash)}</td><td>${chip(r.status)}</td><td>${r.latency_ms} ms</td><td class="muted">${esc(r.reason ?? "")}</td></tr>`).join("");
+  const runs = [...new Set(e.map((x) => x.run_id).filter(Boolean))];
+  const sel = $("l-run"); const cur = sel.value;
+  if (!run) sel.innerHTML = `<option value="">all runs</option>` + runs.map((r) => `<option ${r === cur ? "selected" : ""}>${r}</option>`).join("");
+}
+
+async function loadSales() {
+  const { sales } = await (await fetch("/registry/sales")).json();
+  $("sales-body").innerHTML = sales.map((s) => `<tr><td class="mono">${s.ts.slice(5, 19).replace("T", " ")}</td><td>${esc(s.seller)}</td><td class="mono">${short(s.payer)}</td>
+    <td>${s.amount_usdc}</td><td>${txLink(s.tx_hash)}</td><td><span class="chip ${s.status === "paid" ? "paid" : s.status === "replay_rejected" ? "refused" : "failed_not_charged"}">${s.status}</span></td>
+    <td>${s.latency_ms} ms</td><td class="muted">${esc(s.reason ?? "")}</td></tr>`).join("");
+}
+
+function renderRun(r) {
+  $("run-state").textContent = `run ${r.id}: ${r.state}` + (r.spent ? ` - spent ${usdc(r.spent)} of ${usdc(r.budget)} USDC` : "");
+  $("log").textContent = r.log.join("\n");
+  $("log").scrollTop = 1e9;
+  $("receipt").innerHTML = r.purchases.length ? `<table><thead><tr><th>Step</th><th>Service</th><th>Status</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Tx</th><th>Why chosen</th><th>Note</th></tr></thead><tbody>` +
+    r.purchases.map((p) => `<tr><td>${esc(p.step)}</td><td>${esc(p.service)}</td><td>${chip(p.status)}</td><td>${usdc(p.listed)}</td><td>${p.asked ? usdc(p.asked) : ""}</td><td>${usdc(p.paid)}</td><td>${txLink(p.txHash)}</td><td class="muted">${esc(p.why)}</td><td class="muted">${esc(p.reason ?? "")}</td></tr>`).join("") + "</tbody></table>" : "";
+  if (r.result) {
+    const cur = r.result.currency.toLowerCase();
+    $("result").innerHTML = `<div class="muted">1 GBP = ${r.result.fxRate ?? "?"} ${r.result.currency} (${r.result.fxDate ?? ""}) &middot; pages ${r.result.pagesScraped.join(", ")}${r.result.pagesMissing.length ? " (missing " + r.result.pagesMissing.join(", ") + ")" : ""}</div>` +
+      r.result.books.map((b) => `<div class="card" style="margin-top:8px"><h3><span>${esc(b.title)}</span><span>${"★".repeat(b.rating)}</span></h3>
+        <div>£${b.price_gbp} &rarr; <b>${b["price_" + cur] ?? "?"} ${r.result.currency}</b></div><div style="margin-top:6px">${esc(b.summary_hi ?? "(no summary)")}</div></div>`).join("");
+  }
+  if (r.explanation) { $("explain").classList.remove("hidden"); $("explain").textContent = r.explanation; }
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true; $("result").innerHTML = ""; $("receipt").innerHTML = ""; $("explain").classList.add("hidden");
+  try {
+    const res = await fetch("/buyer/run", { method: "POST", headers: { "Content-Type": "application/json", "x-buyer-token": $("tok").value },
+      body: JSON.stringify({ task: $("task").value, budget: $("budget").value, maxConcurrency: Number($("conc").value) }) });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error);
+    const poll = async () => {
+      const r = await (await fetch("/buyer/runs/" + j.runId)).json();
+      renderRun(r);
+      if (r.state === "running") setTimeout(poll, 1200); else $("go").disabled = false;
+    };
+    poll();
+  } catch (err) { $("run-state").textContent = "error: " + err.message; $("go").disabled = false; }
+};
+
+setInterval(() => { if (!$("ledger").classList.contains("hidden")) loadLedger(); if (!$("sales").classList.contains("hidden")) loadSales(); }, 4000);
+loadInfo(); loadMarket();
+</script>
+</body>
+</html>
