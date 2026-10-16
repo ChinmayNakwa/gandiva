@@ -20,6 +20,9 @@ export const service = (over: Partial<Service> = {}): Service => ({
   outputSchema: { type: "object", required: ["rate"], properties: { rate: { type: "number" } } },
   description: "",
   owner: "external",
+  verification: "unchecked",
+  verificationNote: "",
+  verifiedAt: null,
   ...over,
 });
 

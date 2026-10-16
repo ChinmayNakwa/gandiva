@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../src/config.js";
 import { db } from "../src/db.js";
 import { registry } from "../src/registry/routes.js";
@@ -22,10 +22,14 @@ const post = (body: unknown, raw = false) =>
 const del = (id: string, token?: string) => registry.request(`/services/${id}`, { method: "DELETE", headers: token ? { "x-admin-token": token } : {} });
 
 beforeEach(() => {
+  // Listing probes the endpoint; keep these tests off the network (the probe tests cover its outcomes).
+  vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
   db.exec("DELETE FROM services");
   config.adminToken = "test-admin-token";
   upsertService({ ...(listing({ id: "fx-rates", name: "fx-rates", payTo: OTHER }) as any), owner: SEED_OWNER });
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("registry: open registration for judges' reference sellers", () => {
   it("anyone can list a new seller", async () => {

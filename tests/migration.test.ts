@@ -41,4 +41,30 @@ describe("db migration from the pre-'unconfirmed' ledger schema", () => {
       process.env.DB_PATH = ":memory:";
     }
   });
+
+  it("adds the verification columns to listings created before probing, keeping them", async () => {
+    const path = join(dir, "old-services.db");
+    const old = new Database(path);
+    old.exec(`
+      CREATE TABLE services (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, endpoint TEXT NOT NULL, method TEXT NOT NULL DEFAULT 'GET',
+        price TEXT NOT NULL, network TEXT NOT NULL, asset TEXT NOT NULL, pay_to TEXT NOT NULL, input_schema TEXT NOT NULL,
+        output_schema TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL DEFAULT 'gandiva', created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO services (id,name,category,endpoint,price,network,asset,pay_to,input_schema,output_schema) VALUES ('old','old','data','http://x','1000','n','a','p','{}','{}');
+    `);
+    old.close();
+
+    vi.resetModules();
+    process.env.DB_PATH = path;
+    const { db } = await import("../src/db.js");
+    try {
+      expect(db.prepare("SELECT id, verification, verification_note, verified_at FROM services").all()).toEqual([
+        { id: "old", verification: "unchecked", verification_note: "", verified_at: null },
+      ]);
+    } finally {
+      db.close();
+      process.env.DB_PATH = ":memory:";
+    }
+  });
 });
