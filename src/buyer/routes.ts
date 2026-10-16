@@ -15,7 +15,13 @@ buyer.post("/run", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.task || typeof body.task !== "string") return c.json({ error: "task (string) is required" }, 400);
   try {
-    const run = startTask({ task: body.task, budget: String(body.budget ?? "0.05"), maxConcurrency: Number(body.maxConcurrency ?? body.max_concurrency ?? 3) });
+    const run = startTask({
+      task: body.task,
+      budget: String(body.budget ?? "0.05"),
+      maxConcurrency: Number(body.maxConcurrency ?? body.max_concurrency ?? 3),
+      dryRun: body.dryRun === true || body.dry_run === true,
+      mode: ["agent", "legacy", "auto"].includes(body.mode) ? body.mode : undefined,
+    });
     return c.json({ runId: run.id, status: `/buyer/runs/${run.id}` }, 202);
   } catch (err: any) {
     return c.json({ error: err?.message ?? String(err) }, 400);

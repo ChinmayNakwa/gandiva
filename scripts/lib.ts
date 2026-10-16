@@ -17,8 +17,8 @@ export async function removeListing(id: string) {
   await fetch(`${BASE}/registry/services/${id}`, { method: "DELETE", headers: { "x-admin-token": process.env.ADMIN_TOKEN } }).catch(() => {});
 }
 
-export async function runTask(task: string, budget: string, maxConcurrency: number, quiet = false) {
-  const { runId } = await api("/buyer/run", { task, budget, maxConcurrency });
+export async function runTask(task: string, budget: string, maxConcurrency: number, quiet = false, extra: { dryRun?: boolean; mode?: string } = {}) {
+  const { runId } = await api("/buyer/run", { task, budget, maxConcurrency, ...extra });
   let seen = 0;
   for (;;) {
     await new Promise((r) => setTimeout(r, 1500));
