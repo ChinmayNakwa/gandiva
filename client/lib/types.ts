@@ -196,3 +196,11 @@ export interface LedgerResponse {
 export interface SalesResponse {
   sales: Sale[];
 }
+
+/** Settings of a Sell-tab LLM agent. The API key itself is never sent to the browser. */
+export interface AgentInfo {
+  host: string;
+  model: string;
+  systemPrompt: string;
+  hasKey: boolean;
+}

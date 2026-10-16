@@ -2,27 +2,51 @@
 
 import { useState } from "react";
 import useSWR from "swr";
+import { BotIcon, PlugIcon } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageIntro } from "@/components/page-intro";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LlmAgentForm } from "@/components/sell/llm-agent-form";
 import { ListingFormCard } from "@/components/sell/listing-form";
 import { MyListings } from "@/components/sell/my-listings";
 import { fetcher } from "@/lib/api";
-import type { Service } from "@/lib/types";
+import type { AgentInfo, Service } from "@/lib/types";
+
+type Template = "endpoint" | "llm";
+
+const TEMPLATES: { id: Template; title: string; text: string; icon: typeof PlugIcon }[] = [
+  { id: "endpoint", title: "Bring your own endpoint", text: "You run a server that answers with an x402 402. List its URL, price and schemas.", icon: PlugIcon },
+  { id: "llm", title: "LLM agent (Ollama)", text: "No server needed. Give a model, a system prompt and your Ollama key; we host the paid endpoint.", icon: BotIcon },
+];
+
+const verdict = (s: Service) => (s.verification === "verified" ? "402 matches" : s.verification === "mismatch" ? "402 does NOT match" : "endpoint could not be checked");
 
 export default function SellPage() {
   const { address, loading, busy, signIn, error } = useAuth();
-  const { data, mutate } = useSWR<{ address: string; services: Service[] }>(address ? "/registry/mine" : null, fetcher);
+  const { data, mutate } = useSWR<{ address: string; services: Service[]; agents?: Record<string, AgentInfo> }>(address ? "/registry/mine" : null, fetcher);
+  const [template, setTemplate] = useState<Template>("endpoint");
   const [editing, setEditing] = useState<Service | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const agents = data?.agents ?? {};
+
+  const pick = (t: Template) => {
+    setTemplate(t);
+    setEditing(null);
+    setSaved(null);
+  };
+  const done = (s: Service) => {
+    setSaved(`${s.name} is listed (${verdict(s)}).`);
+    setEditing(null);
+    void mutate();
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <PageIntro
         eyebrow="seller agents"
         title="Sell your own agent"
-        description="List an endpoint you run. Buyer agents discover it in the marketplace and pay your wallet per call over x402. The registry asks your endpoint for its 402 and flags it if the price or payee differs from what you list."
+        description="List an agent that buyer agents can discover in the marketplace and pay your wallet per call over x402. The registry asks the endpoint for its 402 and flags it if the price or payee differs from what you list."
       />
 
       {!address ? (
@@ -41,23 +65,47 @@ export default function SellPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {TEMPLATES.map((t) => {
+              const active = template === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => pick(t.id)}
+                  aria-pressed={active}
+                  className={
+                    "flex items-start gap-3 rounded-xl border p-4 text-left transition-colors " +
+                    (active ? "border-primary/60 bg-primary/10" : "border-border/70 hover:border-primary/40 hover:bg-muted/40")
+                  }
+                >
+                  <t.icon className={"mt-0.5 size-5 shrink-0 " + (active ? "text-primary" : "text-muted-foreground")} />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">{t.title}</span>
+                    <span className="text-xs text-muted-foreground">{t.text}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>{editing ? `Edit ${editing.name}` : "List a seller"}</CardTitle>
+              <CardTitle>{editing ? `Edit ${editing.name}` : template === "llm" ? "List an LLM agent" : "List a seller"}</CardTitle>
             </CardHeader>
             <CardContent>
-              <ListingFormCard
-                // a fresh form whenever a different listing is picked
-                key={editing?.id ?? "new"}
-                wallet={address}
-                editing={editing}
-                onCancel={() => setEditing(null)}
-                onSaved={(s) => {
-                  setSaved(`${s.name} is listed (${s.verification === "verified" ? "402 matches" : s.verification === "mismatch" ? "402 does NOT match" : "endpoint could not be checked"}).`);
-                  setEditing(null);
-                  void mutate();
-                }}
-              />
+              {template === "llm" ? (
+                <LlmAgentForm
+                  // a fresh form whenever another listing or template is picked
+                  key={`llm:${editing?.id ?? "new"}`}
+                  editing={editing}
+                  info={editing ? agents[editing.id] : undefined}
+                  onCancel={() => setEditing(null)}
+                  onSaved={done}
+                />
+              ) : (
+                <ListingFormCard key={`endpoint:${editing?.id ?? "new"}`} wallet={address} editing={editing} onCancel={() => setEditing(null)} onSaved={done} />
+              )}
               {saved ? <p className="mt-3 rounded-lg border border-ok/40 bg-ok/10 px-3 py-2 text-sm text-ok">{saved}</p> : null}
             </CardContent>
           </Card>
@@ -69,8 +117,10 @@ export default function SellPage() {
             <CardContent>
               <MyListings
                 services={data?.services ?? []}
+                agents={agents}
                 onEdit={(s) => {
                   setSaved(null);
+                  setTemplate(agents[s.id] ? "llm" : "endpoint");
                   setEditing(s);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}

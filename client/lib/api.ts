@@ -70,6 +70,23 @@ async function send<T>(method: string, url: string, body?: unknown): Promise<T> 
   return data as T;
 }
 
+export interface AgentForm {
+  id?: string;
+  name: string;
+  description: string;
+  /** USDC smallest units (6 decimals). */
+  price: string;
+  host: string;
+  model: string;
+  systemPrompt: string;
+  /** Leave out to keep the stored key when editing. */
+  apiKey?: string;
+}
+
+export const saveAgent = (form: AgentForm) => send<Service & { hasKey: boolean }>("POST", "/registry/mine/llm-agents", form);
+export const testAgent = (form: Omit<AgentForm, "name" | "description" | "price"> & { text: string }) =>
+  send<{ answer: string; model: string; ms: number }>("POST", "/registry/mine/llm-agents/test", form);
+
 export const saveListing = (form: ListingForm) => send<Service>("POST", "/registry/mine/services", form);
 export const deleteListing = (id: string) => send<{ ok: true }>("DELETE", `/registry/mine/services/${encodeURIComponent(id)}`);
 
