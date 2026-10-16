@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/auth/:path*", destination: `${API_URL}/auth/:path*` },
       { source: "/agent/:path*", destination: `${API_URL}/agent/:path*` },
+      { source: "/mcp", destination: `${API_URL}/mcp` },
       { source: "/registry/:path*", destination: `${API_URL}/registry/:path*` },
       { source: "/buyer/:path*", destination: `${API_URL}/buyer/:path*` },
       { source: "/sellers/:path*", destination: `${API_URL}/sellers/:path*` },

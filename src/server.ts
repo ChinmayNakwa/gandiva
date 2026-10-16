@@ -7,6 +7,7 @@ import { auth } from "./auth/routes.js";
 import { buyer } from "./buyer/routes.js";
 import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
+import { mcp } from "./mcp/server.js";
 import { verifyBuiltIns } from "./registry/probe.js";
 import { registry } from "./registry/routes.js";
 import { activeSellerDefs, buildSellers, seedRegistry } from "./sellers/index.js";
@@ -30,6 +31,7 @@ app.route("/agent", agent);
 app.route("/registry", registry);
 app.route("/sellers", sellers);
 app.route("/buyer", buyer);
+app.route("/mcp", mcp);
 
 app.get("/api/info", async (c) => {
   let buyerAddress: string | null = null;
@@ -57,6 +59,7 @@ serve({ fetch: app.fetch, port: config.port }, () => {
   console.log(`Gandiva running on http://localhost:${config.port}  (public: ${config.publicBaseUrl})`);
   console.log(`  web        ${config.publicBaseUrl}/`);
   console.log(`  registry   ${config.publicBaseUrl}/registry/services`);
+  console.log(`  mcp        ${config.publicBaseUrl}/mcp  (paid MCP tools over x402)`);
   if (remote.size) console.log(`  sellers    ${remote.size} separate processes on 127.0.0.1:${config.sellerBasePort}-${config.sellerBasePort + remote.size - 1}, own database each (data/sellers/)`);
   for (const s of active) console.log(`  seller     ${config.publicBaseUrl}/sellers/${s.id}${s.path}${s.adversarial ? "  (demo bad actor)" : ""}`);
   try {

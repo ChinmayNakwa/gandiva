@@ -32,8 +32,15 @@ const claimNonce = db.prepare("INSERT INTO nonces (key, seller, status) VALUES (
 const releaseNonce = db.prepare("DELETE FROM nonces WHERE key = ? AND status = 'pending'");
 const markSettled = db.prepare("UPDATE nonces SET status = 'settled', tx_hash = ? WHERE key = ?");
 
+/** Replay guard shared with the paid MCP tools: claim before running, release on failure, mark when settled. */
+export const replayGuard = {
+  claim: (key: string, seller: string) => claimNonce.run(key, seller).changes > 0,
+  release: (key: string) => void releaseNonce.run(key),
+  settled: (key: string, tx: string) => void markSettled.run(tx, key),
+};
+
 /** The authorization nonce is what makes a payment unique; fall back to hashing the whole signed payload. */
-function nonceKey(payload: PaymentPayload): string {
+export function nonceKey(payload: PaymentPayload): string {
   const auth = (payload.payload as any)?.authorization;
   if (auth?.nonce && auth?.from) return `${String(auth.from).toLowerCase()}:${auth.nonce}`;
   return "sig:" + createHash("sha256").update(JSON.stringify(payload.payload)).digest("hex");
