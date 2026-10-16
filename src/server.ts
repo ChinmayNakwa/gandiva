@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { config, NETWORK, USDC_ADDRESS } from "./config.js";
+import { auth } from "./auth/routes.js";
 import { buyer } from "./buyer/routes.js";
 import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
@@ -23,6 +24,7 @@ app.onError((err, c) => {
 // SELLER_PROCESSES=on: each seller runs as its own process and this server forwards /sellers/<id>/... to it.
 const remote = config.sellerProcesses ? await startSellerProcesses(activeSellerDefs().map((d) => d.id)) : new Map<string, number>();
 const { app: sellers, active } = buildSellers(remote);
+app.route("/auth", auth);
 app.route("/registry", registry);
 app.route("/sellers", sellers);
 app.route("/buyer", buyer);

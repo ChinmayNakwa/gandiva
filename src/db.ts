@@ -76,6 +76,26 @@ CREATE TABLE IF NOT EXISTS runs (
   budget TEXT NOT NULL,
   result TEXT
 );
+
+-- Wallet sign-in: one-time nonces, sessions (only a hash of the cookie token is stored) and the signed-in users.
+CREATE TABLE IF NOT EXISTS auth_nonces (
+  nonce TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  address TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  address TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  agent_address TEXT,
+  agent_key_enc TEXT
+);
 `);
 
 // Migrate databases created before listings were probed: add the verification columns.
