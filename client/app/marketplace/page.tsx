@@ -8,6 +8,7 @@ import {
   type MarketFilters,
 } from "@/components/market/market-filters";
 import { ServiceCard } from "@/components/market/service-card";
+import { AgentWalletCard } from "@/components/agent/agent-wallet-card";
 import { PageIntro } from "@/components/page-intro";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -51,6 +52,10 @@ export default function MarketplacePage() {
           </a>
         </div>
       </PageIntro>
+
+      <div className="mb-6">
+        <AgentWalletCard />
+      </div>
 
       <MarketFiltersBar
         value={filters}

@@ -140,7 +140,7 @@ export function TaskForm({
           )}
         </Button>
         <span className="text-xs text-muted-foreground">
-          The buyer pays each seller per call from its own wallet.
+          The buyer pays each seller per call: from your agent wallet when you are signed in, otherwise from the shared demo wallet.
         </span>
       </div>
     </form>

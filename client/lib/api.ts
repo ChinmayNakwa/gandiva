@@ -87,6 +87,9 @@ export const saveAgent = (form: AgentForm) => send<Service & { hasKey: boolean }
 export const testAgent = (form: Omit<AgentForm, "name" | "description" | "price"> & { text: string }) =>
   send<{ answer: string; model: string; ms: number }>("POST", "/registry/mine/llm-agents/test", form);
 
+export const withdrawFromAgent = (amount: string) =>
+  send<{ amount_usdc: string; tx_hash: string; explorer: string | null }>("POST", "/agent/withdraw", { amount });
+
 export const saveListing = (form: ListingForm) => send<Service>("POST", "/registry/mine/services", form);
 export const deleteListing = (id: string) => send<{ ok: true }>("DELETE", `/registry/mine/services/${encodeURIComponent(id)}`);
 

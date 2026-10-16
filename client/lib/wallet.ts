@@ -1,4 +1,5 @@
-import { createWalletClient, custom, type EIP1193Provider } from "viem";
+import { createPublicClient, createWalletClient, custom, erc20Abi, type EIP1193Provider } from "viem";
+import { baseSepolia } from "viem/chains";
 
 declare global {
   interface Window {
@@ -40,4 +41,25 @@ export function walletErrorMessage(err: unknown): string | null {
   const e = err as { code?: number; message?: string; shortMessage?: string; cause?: { code?: number } };
   if (e?.code === 4001 || e?.cause?.code === 4001 || /user rejected|user denied/i.test(e?.message ?? "")) return null;
   return e?.shortMessage || e?.message || "sign-in failed";
+}
+
+/** Sends USDC from the user's own wallet to their agent wallet (a normal token transfer; the user pays the gas in Base Sepolia ETH). */
+export async function fundAgentWallet(opts: { agent: string; usdc: string; units: string }, onSent?: (hash: string) => void): Promise<string> {
+  if (!window.ethereum) throw new Error("No browser wallet found. Install MetaMask and reload the page.");
+  const wallet = createWalletClient({ chain: baseSepolia, transport: custom(window.ethereum) });
+  const [account] = await wallet.requestAddresses();
+  if (!account) throw new Error("The wallet did not share an account.");
+  try {
+    await wallet.switchChain({ id: baseSepolia.id });
+  } catch {
+    // Unknown chain in this wallet (error 4902): add Base Sepolia, then switch.
+    await wallet.addChain({ chain: baseSepolia });
+    await wallet.switchChain({ id: baseSepolia.id });
+  }
+  const hash = await wallet.writeContract({ account, address: opts.usdc as `0x${string}`, abi: erc20Abi, functionName: "transfer", args: [opts.agent as `0x${string}`, BigInt(opts.units)] });
+  onSent?.(hash);
+  const publicClient = createPublicClient({ chain: baseSepolia, transport: custom(window.ethereum) });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The transfer failed on chain.");
+  return hash;
 }

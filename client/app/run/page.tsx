@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AgentWalletCard } from "@/components/agent/agent-wallet-card";
 import { PageIntro } from "@/components/page-intro";
 import { Stat } from "@/components/stat";
 import { TaskForm, type RunForm } from "@/components/run/task-form";
@@ -70,6 +71,10 @@ export default function RunPage() {
         title="Run a task"
         description="Give the agent a job and a budget. It plans the work, discovers sellers in the registry, pays each one per call over x402, falls back when a seller misbehaves, and returns results with a full receipt trail."
       />
+
+      <div className="mb-6">
+        <AgentWalletCard />
+      </div>
 
       <Card>
         <CardHeader>

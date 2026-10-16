@@ -180,6 +180,8 @@ export interface Info {
   sellers: SellerInfo[];
   llm: { host: string; model: string; available: boolean };
   buyerTokenRequired: boolean;
+  /** Cap of the shared demo wallet (signed-in users get their own, see AgentWalletInfo). */
+  spendCap: { enabled: boolean; limitUsdc: string; windowMinutes: number; usedUsdc: string; remainingUsdc: string };
 }
 
 export interface ServicesResponse {
@@ -203,4 +205,18 @@ export interface AgentInfo {
   model: string;
   systemPrompt: string;
   hasKey: boolean;
+}
+
+export interface AgentWalletInfo {
+  user: string;
+  address: string;
+  network: string;
+  asset: string;
+  /** USDC smallest units; null when the chain could not be read. */
+  balance: string | null;
+  balanceUsdc: string | null;
+  balanceError: string | null;
+  spendCap: { enabled: boolean; limitUsdc: string; windowMinutes: number; usedUsdc: string; remainingUsdc: string };
+  explorer: string;
+  withdrawals: { id: number; ts: string; amount_usdc: string; status: "settled" | "failed" | "unknown"; tx_hash: string | null; explorer: string | null; reason: string | null }[];
 }

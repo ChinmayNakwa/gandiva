@@ -1,6 +1,7 @@
 import useSWR from "swr";
 import { fetcher, servicesUrl, type ServiceQuery } from "./api";
 import type {
+  AgentWalletInfo,
   Info,
   LedgerResponse,
   Run,
@@ -36,4 +37,9 @@ export function useRun(id?: string | null) {
   return useSWR<Run>(id ? `/buyer/runs/${id}` : null, fetcher, {
     refreshInterval: (run) => (run && run.state !== "running" ? 0 : 1200),
   });
+}
+
+/** The signed-in user's agent wallet (address, balance, spend cap). Pass false while signed out. */
+export function useAgentWallet(enabled: boolean) {
+  return useSWR<AgentWalletInfo>(enabled ? "/agent" : null, fetcher, { refreshInterval: 8000 });
 }
