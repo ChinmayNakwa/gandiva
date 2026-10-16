@@ -1,5 +1,4 @@
 import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { config, NETWORK, USDC_ADDRESS } from "./config.js";
@@ -40,12 +39,11 @@ app.get("/api/info", async (c) => {
 });
 
 app.get("/healthz", (c) => c.json({ ok: true }));
-app.use("/*", serveStatic({ root: "./public" }));
 
 seedRegistry(active);
 serve({ fetch: app.fetch, port: config.port }, () => {
   console.log(`Gandiva running on http://localhost:${config.port}  (public: ${config.publicBaseUrl})`);
-  console.log(`  dashboard  ${config.publicBaseUrl}/`);
+  console.log(`  web        ${config.publicBaseUrl}/`);
   console.log(`  registry   ${config.publicBaseUrl}/registry/services`);
   for (const s of active) console.log(`  seller     ${config.publicBaseUrl}/sellers/${s.id}${s.path}${s.adversarial ? "  (demo bad actor)" : ""}`);
   try {
