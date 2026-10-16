@@ -28,6 +28,8 @@ export const config = {
   buyerPrivateKey: env("BUYER_PRIVATE_KEY") as `0x${string}` | "",
   buyerToken: env("BUYER_TOKEN"),
   adminToken: env("ADMIN_TOKEN"),
+  // 64 hex characters (32 bytes). Encrypts secrets stored in the database: sellers' API keys and per-user agent wallet keys.
+  secretsKey: env("SECRETS_KEY"),
   // Wallet-wide spend cap across all runs; SPEND_CAP_USDC=0 turns it off.
   spendCap: {
     limit: toUnits(env("SPEND_CAP_USDC", "0.5")),

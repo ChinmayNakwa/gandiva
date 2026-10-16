@@ -4,6 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
 import { currentUser } from "../auth/routes.js";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
+import { listHostedFor } from "../hosted/agents.js";
+import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
 import { deleteOwnedService, deleteService, getService, listByOwner, listLedger, listSales, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
@@ -51,8 +53,10 @@ const signedIn = (c: Context) => currentUser(c);
 registry.get("/mine", (c) => {
   const me = signedIn(c);
   if (!me) return c.json({ error: "sign in with your wallet first" }, 401);
-  return c.json({ address: me, services: listByOwner(me).map((s) => ({ ...s, reputation: reputationFor(s.id) })) });
+  return c.json({ address: me, services: listByOwner(me).map((s) => ({ ...s, reputation: reputationFor(s.id) })), agents: listHostedFor(me) });
 });
+
+registry.route("/mine/llm-agents", hostedRoutes);
 
 registry.post(
   "/mine/services",

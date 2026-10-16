@@ -85,7 +85,7 @@ const rowToService = (r: any): Service => ({
   verifiedAt: r.verified_at,
 });
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
 
 export function upsertService(input: ServiceInput): Service {
   const s = serviceInput.parse(input);
@@ -174,6 +174,7 @@ export function deleteOwnedService(id: string, wallet: string): "deleted" | "not
 }
 
 export function deleteService(id: string) {
+  db.prepare("DELETE FROM hosted_sellers WHERE service_id = ?").run(id);
   return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
 }
 

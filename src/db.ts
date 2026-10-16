@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS runs (
   result TEXT
 );
 
+-- Sell-tab "LLM agent" listings: the seller's model settings. The API key is stored encrypted (see src/crypto/secrets.ts).
+CREATE TABLE IF NOT EXISTS hosted_sellers (
+  service_id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  host TEXT NOT NULL,
+  model TEXT NOT NULL,
+  system_prompt TEXT NOT NULL,
+  api_key_enc TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Wallet sign-in: one-time nonces, sessions (only a hash of the cookie token is stored) and the signed-in users.
 CREATE TABLE IF NOT EXISTS auth_nonces (
   nonce TEXT PRIMARY KEY,

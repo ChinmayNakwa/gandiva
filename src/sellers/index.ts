@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { config } from "../config.js";
+import { hostedRoute } from "../hosted/agents.js";
 import { chat } from "../llm.js";
 import { upsertService, type Category, type ServiceInput } from "../registry/store.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
@@ -281,6 +282,8 @@ export function mountSeller(app: Hono, def: SellerDef) {
  */
 export function buildSellers(remote: ReadonlyMap<string, number> = new Map()): { app: Hono; active: SellerDef[] } {
   const app = new Hono();
+  // Sell-tab "LLM agent" listings: one paid route for all of them, built from each agent's stored settings.
+  app.post("/u/:id/ask", hostedRoute);
   const active = activeSellerDefs();
   for (const def of active) {
     const port = remote.get(def.id);

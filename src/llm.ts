@@ -6,15 +6,29 @@ export interface ChatMessage {
 }
 
 /** Minimal Ollama /api/chat client (works with local Ollama or Ollama cloud via OLLAMA_API_KEY). */
-export async function chat(messages: ChatMessage[], opts: { json?: boolean; timeoutMs?: number; temperature?: number } = {}): Promise<string> {
+export interface ChatOptions {
+  json?: boolean;
+  timeoutMs?: number;
+  temperature?: number;
+  /** Another Ollama server (a seller's own). The server-wide API key is never sent there; give apiKey if it needs one. */
+  host?: string;
+  apiKey?: string;
+  model?: string;
+}
+
+export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.ollama.apiKey) headers.Authorization = `Bearer ${config.ollama.apiKey}`;
-  const res = await fetch(`${config.ollama.host}/api/chat`, {
+  const host = (opts.host ?? config.ollama.host).replace(/\/$/, "");
+  const apiKey = opts.host ? (opts.apiKey ?? "") : config.ollama.apiKey;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const res = await fetch(`${host}/api/chat`, {
     method: "POST",
     headers,
+    // A seller-chosen host must not bounce us to an internal address.
+    redirect: opts.host ? "error" : "follow",
     signal: AbortSignal.timeout(opts.timeoutMs ?? 60_000),
     body: JSON.stringify({
-      model: config.ollama.model,
+      model: opts.model ?? config.ollama.model,
       messages,
       stream: false,
       ...(opts.json ? { format: "json" } : {}),
