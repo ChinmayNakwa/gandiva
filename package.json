@@ -1,0 +1,56 @@
+{
+  "name": "gandiva",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pay-per-call agent economy: agents hire agents and pay per request in USDC over x402 v2 on Base Sepolia",
+  "type": "module",
+  "scripts": {
+    "start": "tsx scripts/start.ts",
+    "server": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "wallets:new": "tsx scripts/wallets.ts",
+    "balances": "tsx scripts/balances.ts",
+    "task": "tsx scripts/run-task.ts",
+    "reconcile": "tsx scripts/reconcile.ts",
+    "judge:replay": "tsx scripts/judge/replay.ts",
+    "judge:price": "tsx scripts/judge/price-check.ts",
+    "judge:budget": "tsx scripts/judge/budget.ts",
+    "judge:failure": "tsx scripts/judge/seller-failure.ts",
+    "judge:junk": "tsx scripts/judge/junk.ts",
+    "judge:interop": "tsx scripts/judge/interop-seller.ts",
+    "interop:ref-seller": "tsx scripts/interop/ref-seller.ts",
+    "interop:ref-buyer": "tsx scripts/interop/ref-buyer.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Manasi-Choudhari/gandiva.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@x402/core": "^2.28.0",
+    "@x402/evm": "^2.28.0",
+    "@x402/express": "^2.28.0",
+    "@x402/fetch": "^2.28.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "async-mutex": "^0.5.0",
+    "better-sqlite3": "^13.0.3",
+    "cheerio": "^1.2.0",
+    "dotenv": "^18.0.8",
+    "hono": "^4.13.13",
+    "p-limit": "^7.3.3",
+    "viem": "^2.57.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "concurrently": "^10.0.6",
+    "express": "^5.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
