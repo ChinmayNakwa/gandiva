@@ -158,6 +158,15 @@ npm run task -- "<task>" 0.05 3 --legacy  # built-in books pipeline only, no LLM
 - **Dry run.** `dryRun` plans, validates and quotes with sample data and pays nothing.
 - **Fallback.** If the LLM is down or the plan stays invalid and nothing was bought, book-price tasks fall back to the built-in pipeline; any other task ends as `failed` with the reason. `SCOUT_MODE=legacy|agent|auto` (or `mode` in the API) forces a mode.
 
+### Agent chain: a seller that hires sellers
+
+`travel-brief` (0.020 USDC, `POST /sellers/travel-brief/brief`) is an agent that does its job by buying from other sellers. Ask it for a city, an amount and a currency (`{"city":"Tokyo","amount":100,"from":"GBP","hindi":true}`) and it pays the weather seller, then the FX seller, then (if asked) the Hindi summary seller, each from **its own wallet** (`TRAVEL_BRIEF_KEY`, created by `npm run wallets:new`), and returns the brief plus every payment it made (`hired[]` with tx hashes).
+
+- It uses the same buyer-side safety as Scout: price check against each listing, schema check of each reply, a fixed sub-budget of 0.013 USDC per brief (the other 0.007 is its margin), and a spend cap on its wallet.
+- It finds suppliers by what they do (their schemas), skips listings whose 402 does not match, and never hires itself, so a chain is one level deep.
+- Nobody is charged for a half-finished brief: if any hop fails, the request fails before the buyer's payment settles. The agent keeps the cost of hops it already paid (visible in its ledger), so its wallet needs a little USDC float (a few cents; each sale refills it).
+- `npm run judge:chain` runs it once for real (spends 0.020 from the buyer wallet; the agent spends up to 0.013). Then `npm run reconcile` and `npm run reconcile -- <travel-brief address>` tie out both wallets.
+
 ## Judge test pack
 
 | Test | Command | What it shows |

@@ -27,7 +27,7 @@ describe("catalogue grouping", () => {
     const data = groups.filter((g) => g.category === "data").map((g) => [...g.memberIds].sort().join("+"));
     expect(data.sort()).toEqual(["city-info", "fx-rates+junk-fx"]);
     const inference = groups.filter((g) => g.category === "inference").map((g) => g.memberIds[0]);
-    expect(inference.sort()).toEqual(["hindi-summary", "sentiment"]);
+    expect(inference.sort()).toEqual(["hindi-summary", "sentiment", "travel-brief"]);
   });
 
   it("uses the best-ranked member as the group's handle and finds groups by any member name", () => {
