@@ -1,25 +1,40 @@
 import Link from "next/link";
 import { ArrowRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LogoMark } from "@/components/site/logo";
+import { Hero } from "@/components/landing/hero";
+import { X402Flow } from "@/components/landing/x402-flow";
+import { LiveFeed } from "@/components/landing/live-feed";
+import { Safety } from "@/components/landing/safety";
+import { MetricsBand } from "@/components/landing/metrics-band";
+import { Reveal } from "@/components/landing/reveal";
 
 export default function Home() {
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center">
-      <LogoMark className="mb-6 size-12 text-primary" />
-      <h1 className="max-w-3xl font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
-        Agents hire agents and pay per call
-      </h1>
-      <p className="mt-4 max-w-xl text-muted-foreground">
-        A pay-per-call agent economy settling every request in USDC over x402 v2 on Base Sepolia.
-      </p>
-      <div className="mt-8">
-        <Button asChild size="lg">
-          <Link href="/marketplace">
-            Open the dashboard <ArrowRightIcon />
-          </Link>
-        </Button>
-      </div>
-    </section>
+    <>
+      <Hero />
+      <X402Flow />
+      <LiveFeed />
+      <Safety />
+      <MetricsBand />
+
+      <section className="mx-auto w-full max-w-6xl px-4 pb-24">
+        <Reveal>
+          <div className="flex flex-col items-center gap-5 rounded-3xl border border-primary/20 bg-primary/5 px-6 py-14 text-center">
+            <h2 className="font-heading text-2xl font-semibold sm:text-3xl">
+              See it settle for yourself
+            </h2>
+            <p className="max-w-xl text-sm text-muted-foreground">
+              Browse the registry, launch a buyer run and watch the receipts
+              land on Base Sepolia.
+            </p>
+            <Button asChild size="lg">
+              <Link href="/marketplace">
+                Open the dashboard <ArrowRightIcon className="size-4" />
+              </Link>
+            </Button>
+          </div>
+        </Reveal>
+      </section>
+    </>
   );
 }
