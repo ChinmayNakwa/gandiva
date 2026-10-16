@@ -30,6 +30,10 @@ export const serviceInput = z.object({
 });
 export type ServiceInput = z.infer<typeof serviceInput>;
 
+/** Result of asking the listed endpoint for its 402: "verified" = terms match the listing, "mismatch" = they do not, "unchecked" = could not tell. */
+export const VERIFICATIONS = ["verified", "mismatch", "unchecked"] as const;
+export type Verification = (typeof VERIFICATIONS)[number];
+
 export interface Service {
   id: string;
   name: string;
@@ -44,6 +48,9 @@ export interface Service {
   outputSchema: Record<string, unknown>;
   description: string;
   owner: string;
+  verification: Verification;
+  verificationNote: string;
+  verifiedAt: string | null;
 }
 
 export interface Reputation {
@@ -73,6 +80,9 @@ const rowToService = (r: any): Service => ({
   outputSchema: JSON.parse(r.output_schema),
   description: r.description,
   owner: r.owner,
+  verification: r.verification,
+  verificationNote: r.verification_note,
+  verifiedAt: r.verified_at,
 });
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
@@ -85,9 +95,15 @@ export function upsertService(input: ServiceInput): Service {
      VALUES (@id,@name,@category,@endpoint,@method,@price,@network,@asset,@payTo,@inputSchema,@outputSchema,@description,@owner)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, category=excluded.category, endpoint=excluded.endpoint,
        method=excluded.method, price=excluded.price, network=excluded.network, asset=excluded.asset, pay_to=excluded.pay_to,
-       input_schema=excluded.input_schema, output_schema=excluded.output_schema, description=excluded.description, owner=excluded.owner`,
+       input_schema=excluded.input_schema, output_schema=excluded.output_schema, description=excluded.description, owner=excluded.owner,
+       verification='unchecked', verification_note='', verified_at=NULL`,
   ).run({ ...s, id, inputSchema: JSON.stringify(s.inputSchema), outputSchema: JSON.stringify(s.outputSchema) });
   return getService(id)!;
+}
+
+/** Records what the last probe of the listing's 402 found. An edited listing goes back to "unchecked" until it is probed again. */
+export function setVerification(id: string, v: { verification: Verification; note: string }) {
+  db.prepare("UPDATE services SET verification = ?, verification_note = ?, verified_at = ? WHERE id = ?").run(v.verification, v.note.slice(0, 300), new Date().toISOString(), id);
 }
 
 export const SEED_OWNER = "gandiva";
@@ -119,6 +135,10 @@ export function registerExternal(input: unknown): Service {
 
 export function deleteService(id: string) {
   return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
+}
+
+export function listServices(): Service[] {
+  return db.prepare("SELECT * FROM services").all().map(rowToService);
 }
 
 export function getService(id: string): Service | undefined {
@@ -195,8 +215,10 @@ export function searchServices(q: { category?: string; maxPrice?: string; sort?:
   return list;
 }
 
-/** Buyer's choice order: reputation score first, then price, then latency. */
+/** Buyer's choice order: listings whose 402 contradicts them last, then reputation score, then price, then latency. */
 export function rankCompare(a: ServiceWithReputation, b: ServiceWithReputation) {
+  const dm = Number(a.verification === "mismatch") - Number(b.verification === "mismatch");
+  if (dm) return dm;
   const ds = b.reputation.score - a.reputation.score;
   if (Math.abs(ds) > 0.05) return ds;
   const dp = BigInt(a.price) - BigInt(b.price);

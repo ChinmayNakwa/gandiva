@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
+import { endpointBlockedReason, verifyService } from "./probe.js";
 import { deleteService, getService, listLedger, listSales, RegistryError, registerExternal, reputationFor, searchServices } from "./store.js";
 
 export const registry = new Hono();
@@ -28,7 +29,12 @@ registry.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      return c.json(registerExternal(body), 201);
+      const blocked = typeof body?.endpoint === "string" ? await endpointBlockedReason(body.endpoint) : null;
+      if (blocked) return c.json({ error: blocked }, 400);
+      const listed = registerExternal(body);
+      // The listing is accepted either way; the probe records whether its real 402 matches (see Verification).
+      await verifyService(listed);
+      return c.json(getService(listed.id), 201);
     } catch (err) {
       if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
       if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);

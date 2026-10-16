@@ -15,6 +15,14 @@ export const config = {
   get publicBaseUrl() {
     return env("PUBLIC_BASE_URL") || `http://localhost:${this.port}`;
   },
+  // May listings point at private/loopback addresses? "auto" = only while this registry itself runs on localhost.
+  get allowPrivateEndpoints() {
+    const v = env("ALLOW_PRIVATE_ENDPOINTS", "auto").toLowerCase();
+    if (v === "true") return true;
+    if (v === "false") return false;
+    const host = new URL(this.publicBaseUrl).hostname;
+    return host === "localhost" || host.startsWith("127.") || host === "[::1]";
+  },
   facilitatorUrl: env("FACILITATOR_URL", "https://x402.org/facilitator"),
   rpcUrl: env("BASE_SEPOLIA_RPC", "https://sepolia.base.org"),
   buyerPrivateKey: env("BUYER_PRIVATE_KEY") as `0x${string}` | "",

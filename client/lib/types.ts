@@ -30,6 +30,10 @@ export interface Service {
   outputSchema: Record<string, unknown>;
   description: string;
   owner: string;
+  /** What probing the endpoint's real 402 found: verified = matches the listing, mismatch = contradicts it, unchecked = could not tell. */
+  verification: "verified" | "mismatch" | "unchecked";
+  verificationNote: string;
+  verifiedAt: string | null;
   reputation: Reputation;
 }
 

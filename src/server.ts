@@ -5,6 +5,7 @@ import { config, NETWORK, USDC_ADDRESS } from "./config.js";
 import { buyer } from "./buyer/routes.js";
 import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
+import { verifyBuiltIns } from "./registry/probe.js";
 import { registry } from "./registry/routes.js";
 import { buildSellers, seedRegistry } from "./sellers/index.js";
 import { getResourceServer } from "./x402/resourceServer.js";
@@ -55,6 +56,9 @@ serve({ fetch: app.fetch, port: config.port }, () => {
   } catch (err: any) {
     console.warn(`  buyer      not configured: ${err.message}`);
   }
+  verifyBuiltIns()
+    .then(() => console.log("  registry   built-in listings probed"))
+    .catch((err) => console.error(`  registry   probing built-ins failed: ${err.message}`));
 });
 
 getResourceServer()

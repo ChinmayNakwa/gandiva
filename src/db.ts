@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS services (
   output_schema TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   owner TEXT NOT NULL DEFAULT 'gandiva',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  verification TEXT NOT NULL DEFAULT 'unchecked',
+  verification_note TEXT NOT NULL DEFAULT '',
+  verified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ledger (
@@ -74,6 +77,16 @@ CREATE TABLE IF NOT EXISTS runs (
   result TEXT
 );
 `);
+
+// Migrate databases created before listings were probed: add the verification columns.
+const serviceColumns = (db.prepare("PRAGMA table_info(services)").all() as { name: string }[]).map((c) => c.name);
+if (!serviceColumns.includes("verification")) {
+  db.exec(`
+    ALTER TABLE services ADD COLUMN verification TEXT NOT NULL DEFAULT 'unchecked';
+    ALTER TABLE services ADD COLUMN verification_note TEXT NOT NULL DEFAULT '';
+    ALTER TABLE services ADD COLUMN verified_at TEXT;
+  `);
+}
 
 // Migrate databases created before the "unconfirmed" status: drop the old status CHECK and add the authorisation columns.
 const ledgerSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ledger'").get() as { sql: string }).sql;

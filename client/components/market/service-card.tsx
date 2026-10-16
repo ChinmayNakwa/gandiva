@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ShieldAlertIcon } from "lucide-react";
+import { ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CategoryBadge } from "@/components/status-badge";
 import { AddrLink } from "@/components/tx-link";
@@ -95,6 +95,21 @@ export function ServiceCard({
           <div className="truncate font-mono text-[11px] text-muted-foreground">
             {service.endpoint}
           </div>
+
+          {service.verification === "mismatch" ? (
+            <div className="flex items-start gap-1.5 rounded-md border border-bad/30 bg-bad/10 px-2 py-1 text-[11px] text-bad">
+              <ShieldAlertIcon className="mt-0.5 size-3 shrink-0" />
+              <span>402 does not match this listing — {service.verificationNote.replace(/^402 contradicts the listing: /, "")}</span>
+            </div>
+          ) : service.verification === "verified" ? (
+            <div
+              className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+              title={service.verificationNote}
+            >
+              <ShieldCheckIcon className="size-3 text-primary" />
+              402 checked against the listing
+            </div>
+          ) : null}
 
           {adversarial ? (
             <div className="flex items-center gap-1.5 rounded-md border border-bad/30 bg-bad/10 px-2 py-1 text-[11px] text-bad">
