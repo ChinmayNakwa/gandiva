@@ -1,49 +1,15 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import type { PaymentRequired } from "@x402/core/types";
 import { config } from "../config.js";
 import { sampleFromSchema } from "../buyer/catalogue.js";
 import { buildRequest, checkAgainstListing } from "../x402/safePayer.js";
+export { endpointBlockedReason, isPrivateAddress } from "../x402/endpointGuard.js";
 import { validate } from "../x402/schema.js";
 import { listServices, setVerification, SEED_OWNER, type Service, type Verification } from "./store.js";
 
 export interface ProbeResult {
   verification: Verification;
   note: string;
-}
-
-/** True for loopback, private, link-local and other addresses that a public registry should never be pointed at. */
-export function isPrivateAddress(ip: string): boolean {
-  const v4 = ip.toLowerCase().replace(/^::ffff:/, "");
-  if (isIP(v4) === 4) {
-    const [a, b] = v4.split(".").map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
-  }
-  if (isIP(v4) === 6) return v4 === "::" || v4 === "::1" || /^f[cd]/.test(v4) || /^fe[89ab]/.test(v4) || v4.startsWith("ff");
-  return false;
-}
-
-/** Why a listing's endpoint must not be accepted (null = fine). Blind to what the endpoint answers; only checks where it points. */
-export async function endpointBlockedReason(endpoint: string, allowPrivate = config.allowPrivateEndpoints): Promise<string | null> {
-  let url: URL;
-  try {
-    url = new URL(endpoint);
-  } catch {
-    return "endpoint is not a valid URL";
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return "endpoint must be an http(s) URL";
-  if (url.username || url.password) return "endpoint must not contain credentials";
-  if (allowPrivate) return null;
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return "endpoint points at a private address; list a public URL";
-  let addresses: string[];
-  try {
-    addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address);
-  } catch {
-    return null; // not resolvable from here: the probe will report it as unreachable
-  }
-  return addresses.some(isPrivateAddress) ? "endpoint points at a private address; list a public URL" : null;
 }
 
 /**

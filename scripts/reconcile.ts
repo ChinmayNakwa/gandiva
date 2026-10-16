@@ -68,6 +68,15 @@ for (const s of direct) {
   const receipt = await client.getTransactionReceipt({ hash: s.tx_hash });
   if (firstBlock === null || receipt.blockNumber < firstBlock) firstBlock = receipt.blockNumber;
 }
+// A withdrawal can come before the first purchase (fund, withdraw, fund again, run): start the chain scan early enough to see it.
+for (const w of withdrawals.filter((w) => w.status === "settled")) {
+  if (!w.tx_hash) {
+    problems.push(`withdrawal #${w.id} is settled but has no tx hash`);
+    continue;
+  }
+  const receipt = await client.getTransactionReceipt({ hash: w.tx_hash });
+  if (firstBlock === null || receipt.blockNumber < firstBlock) firstBlock = receipt.blockNumber;
+}
 
 if (firstBlock !== null) {
   const latest = await client.getBlockNumber();

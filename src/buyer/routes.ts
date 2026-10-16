@@ -6,9 +6,11 @@ import { buyCategory, buyOnce, getRun, listRuns, startTask } from "./scout.js";
 
 export const buyer = new Hono();
 
-// The optional buyer token guards the shared demo wallet; a signed-in user spends their own money, so it does not apply to them.
+// The optional buyer token guards the shared demo wallet. Only /run pays from a signed-in user's own agent wallet, so only
+// there may a signed-in user skip it; /buy and /call always pay from the shared wallet.
 buyer.use("/*", async (c, next) => {
-  if (c.req.method !== "GET" && config.buyerToken && !currentUser(c) && c.req.header("x-buyer-token") !== config.buyerToken) {
+  const ownWallet = c.req.path.endsWith("/run") && currentUser(c);
+  if (c.req.method !== "GET" && config.buyerToken && !ownWallet && c.req.header("x-buyer-token") !== config.buyerToken) {
     return c.json({ error: "missing or wrong x-buyer-token" }, 401);
   }
   await next();

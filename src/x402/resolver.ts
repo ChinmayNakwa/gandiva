@@ -1,3 +1,4 @@
+import { resolveUnknownWithdrawals } from "../agents/wallet.js";
 import { fromUnits } from "../config.js";
 import { listAuditable, listUnconfirmed, resolveLedger } from "../registry/store.js";
 import { chainTime, lookupAuthorization, type AuthRef } from "./chain.js";
@@ -76,6 +77,8 @@ export function startResolver(intervalMs = 15_000) {
     try {
       const s = await resolveUnconfirmed();
       if (s.paid || s.notCharged) console.log(`[resolver] settled ${s.paid} paid, ${s.notCharged} not charged (${s.stillOpen} still open)`);
+      const w = await resolveUnknownWithdrawals();
+      if (w) console.log(`[resolver] settled ${w} withdrawal(s) of unknown outcome from the chain`);
     } catch (err: any) {
       console.warn(`[resolver] ${err?.message ?? err}`);
     } finally {

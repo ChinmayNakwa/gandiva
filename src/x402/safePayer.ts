@@ -6,6 +6,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { fromUnits, NETWORK } from "../config.js";
 import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
 import type { BudgetLedger } from "./budget.js";
+import { endpointBlockedReason } from "./endpointGuard.js";
 import { validate } from "./schema.js";
 import { spendCap as sharedCap, type CapReservation, type SpendCap } from "./spendCap.js";
 
@@ -25,23 +26,26 @@ type Check = { ok: true; accept: PaymentRequirements } | { ok: false; reason: st
 
 /** Price check: only sign a 402 whose terms match the registry listing exactly (or ask for less). */
 export function checkAgainstListing(service: Service, pr: PaymentRequired): Check {
+  if (!pr || typeof pr !== "object") return { ok: false, reason: "402 body is not a payment request" };
   if (pr.x402Version !== 2) return { ok: false, reason: `unsupported x402Version ${pr.x402Version}` };
+  if (pr.accepts !== undefined && !Array.isArray(pr.accepts)) return { ok: false, reason: "402 accepts is not a list" };
   const accepts = pr.accepts ?? [];
   if (!accepts.length) return { ok: false, reason: "402 lists no payment options" };
   const listed = BigInt(service.price);
   const problems: string[] = [];
   for (const a of accepts) {
+    // A seller controls this JSON: anything malformed is a refusal, never an exception.
+    const missing = !a || typeof a !== "object" ? ["the option itself"] : (["scheme", "network", "asset", "payTo", "amount"] as const).filter((k) => typeof a[k] !== "string");
+    if (missing.length) {
+      problems.push(`payment option is missing ${missing.join(", ")}`);
+      continue;
+    }
     const p: string[] = [];
     if (a.scheme !== "exact") p.push(`scheme ${a.scheme} is not "exact"`);
     if (a.network !== service.network) p.push(`network ${a.network} differs from listed ${service.network}`);
     if (a.asset.toLowerCase() !== service.asset.toLowerCase()) p.push(`token ${a.asset} differs from listed ${service.asset}`);
     if (a.payTo.toLowerCase() !== service.payTo.toLowerCase()) p.push(`payTo ${a.payTo} differs from listed ${service.payTo}`);
-    let amount: bigint;
-    try {
-      amount = BigInt(a.amount);
-    } catch {
-      amount = -1n;
-    }
+    const amount = /^\d+$/.test(a.amount) ? BigInt(a.amount) : -1n;
     if (amount < 0n) p.push(`amount ${a.amount} is not a valid integer`);
     else if (amount > listed) {
       const ratio = Number(amount) / Number(listed);
@@ -116,10 +120,20 @@ export class SafePayer {
       }
     };
 
-    const { url, init } = buildRequest(service, input);
+    let url: string;
+    let init: RequestInit & { headers: Record<string, string> };
+    try {
+      ({ url, init } = buildRequest(service, input));
+    } catch (err: any) {
+      return finish({ status: "refused", paid: 0n, reason: `bad endpoint: ${err?.message ?? err}` });
+    }
+    // Checked again on every call: a listing's DNS can be changed after it was accepted.
+    const blocked = await endpointBlockedReason(url);
+    if (blocked) return finish({ status: "refused", paid: 0n, reason: `endpoint guard: ${blocked}` });
     let first: Response;
     try {
-      first = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      // Never follow redirects: a public endpoint could bounce us to an internal address.
+      first = await fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
     } catch (err: any) {
       return finish({ status: "failed_not_charged", paid: 0n, reason: `unreachable: ${err?.message ?? err}` });
     }
@@ -139,7 +153,8 @@ export class SafePayer {
     }
 
     const check = checkAgainstListing(service, pr);
-    const askedGuess = pr.accepts?.[0]?.amount ? BigInt(pr.accepts[0].amount) : undefined;
+    const firstAmount = Array.isArray(pr?.accepts) ? pr.accepts[0]?.amount : undefined;
+    const askedGuess = typeof firstAmount === "string" && /^\d+$/.test(firstAmount) ? BigInt(firstAmount) : undefined;
     if (!check.ok) return finish({ status: "refused", paid: 0n, asked: askedGuess, reason: `price check: ${check.reason}` });
     const asked = BigInt(check.accept.amount);
 
@@ -174,6 +189,7 @@ export class SafePayer {
     try {
       paidRes = await fetch(url, {
         ...init,
+        redirect: "manual",
         headers: { ...init.headers, "PAYMENT-SIGNATURE": encodePaymentSignatureHeader(payload) },
         signal: AbortSignal.timeout(timeoutMs),
       });

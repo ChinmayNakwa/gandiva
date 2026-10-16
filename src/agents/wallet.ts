@@ -7,7 +7,7 @@ import { config, fromUnits, NETWORK, USDC_ADDRESS, USDC_EIP712 } from "../config
 import { decryptSecret, encryptSecret, secretsConfigured } from "../crypto/secrets.js";
 import { db } from "../db.js";
 import { SafePayer } from "../x402/safePayer.js";
-import { chainClient } from "../x402/chain.js";
+import { chainClient, lookupAuthorization } from "../x402/chain.js";
 import { capForWallet } from "../x402/spendCap.js";
 
 /** Something the signed-in user can act on (status is the HTTP code to answer with). */
@@ -79,6 +79,30 @@ export function listWithdrawals(agent?: string): Withdrawal[] {
   return rows as Withdrawal[];
 }
 
+/**
+ * Settles "unknown" withdrawals from the chain, like the ledger resolver does for payments: a used authorisation means the
+ * USDC moved (-> settled, with its tx); an unused one past validBefore can never move (-> failed). Returns how many changed.
+ */
+export async function resolveUnknownWithdrawals(lookup: typeof lookupAuthorization = lookupAuthorization, now?: number): Promise<number> {
+  const open = db.prepare("SELECT * FROM withdrawals WHERE status = 'unknown' AND auth_nonce IS NOT NULL ORDER BY id").all() as (Withdrawal & {
+    auth_nonce: string;
+    valid_before: number;
+    signed_at: number;
+  })[];
+  let changed = 0;
+  for (const w of open) {
+    try {
+      const out = await lookup({ from: w.agent_address, nonce: w.auth_nonce, validBefore: Number(w.valid_before), signedAt: Number(w.signed_at) }, now);
+      const update = db.prepare("UPDATE withdrawals SET status = ?, tx_hash = ?, reason = ? WHERE id = ? AND status = 'unknown'");
+      if (out.state === "used") changed += update.run("settled", out.txHash, "resolved from chain: the withdrawal was settled", w.id).changes;
+      else if (out.state === "unused" && out.expired) changed += update.run("failed", null, "resolved from chain: the authorisation expired unused, nothing moved", w.id).changes;
+    } catch (err: any) {
+      console.warn(`[resolver] withdrawal #${w.id}: ${String(err?.shortMessage ?? err?.message ?? err).slice(0, 160)}`);
+    }
+  }
+  return changed;
+}
+
 interface Settler {
   settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse>;
 }
@@ -116,16 +140,27 @@ export async function withdraw(user: string, amount: bigint | "all", deps: { set
       accepts: [requirements],
     };
     const base = { ts: new Date().toISOString(), user_address: lower(user), agent_address: payer.address, to_address: lower(user), amount: value.toString() };
+    let auth: { nonce: string; validBefore: number } | null = null;
     const record = (status: Withdrawal["status"], tx: string | null, reason: string | null) => {
       const info = db
-        .prepare("INSERT INTO withdrawals (ts,user_address,agent_address,to_address,amount,tx_hash,status,reason) VALUES (?,?,?,?,?,?,?,?)")
-        .run(base.ts, base.user_address, base.agent_address, base.to_address, base.amount, tx, status, reason);
+        .prepare("INSERT INTO withdrawals (ts,user_address,agent_address,to_address,amount,tx_hash,status,reason,auth_nonce,valid_before,signed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        .run(base.ts, base.user_address, base.agent_address, base.to_address, base.amount, tx, status, reason, auth?.nonce ?? null, auth?.validBefore ?? null, Math.floor(Date.now() / 1000));
       return db.prepare("SELECT * FROM withdrawals WHERE id = ?").get(Number(info.lastInsertRowid)) as Withdrawal;
     };
 
+    let payload: PaymentPayload;
+    try {
+      payload = await payer.sign(required);
+    } catch (err: any) {
+      // Nothing was signed, so nothing can move.
+      record("failed", null, `could not sign: ${String(err?.message ?? err).slice(0, 280)}`);
+      throw new AgentWalletError(`could not sign the withdrawal (${String(err?.message ?? err).slice(0, 150)}). Nothing was moved.`, 502);
+    }
+    const a = (payload.payload as any)?.authorization;
+    if (a?.nonce && a?.validBefore) auth = { nonce: String(a.nonce), validBefore: Number(a.validBefore) };
+
     let settled: SettleResponse;
     try {
-      const payload = await payer.sign(required);
       settled = await (deps.settler ?? defaultSettler()).settle(payload, requirements);
     } catch (err: any) {
       // The signed authorisation left our hands: it may still be settled. Say so instead of claiming nothing moved.

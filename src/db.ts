@@ -98,7 +98,10 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   amount TEXT NOT NULL,
   tx_hash TEXT,
   status TEXT NOT NULL,
-  reason TEXT
+  reason TEXT,
+  auth_nonce TEXT,
+  valid_before INTEGER,
+  signed_at INTEGER
 );
 
 -- Wallet sign-in: one-time nonces, sessions (only a hash of the cookie token is stored) and the signed-in users.
@@ -129,6 +132,16 @@ if (!serviceColumns.includes("verification")) {
     ALTER TABLE services ADD COLUMN verification TEXT NOT NULL DEFAULT 'unchecked';
     ALTER TABLE services ADD COLUMN verification_note TEXT NOT NULL DEFAULT '';
     ALTER TABLE services ADD COLUMN verified_at TEXT;
+  `);
+}
+
+// Migrate withdrawals made before their authorisation was kept (needed to settle an "unknown" one from the chain).
+const withdrawalColumns = (db.prepare("PRAGMA table_info(withdrawals)").all() as { name: string }[]).map((c) => c.name);
+if (!withdrawalColumns.includes("auth_nonce")) {
+  db.exec(`
+    ALTER TABLE withdrawals ADD COLUMN auth_nonce TEXT;
+    ALTER TABLE withdrawals ADD COLUMN valid_before INTEGER;
+    ALTER TABLE withdrawals ADD COLUMN signed_at INTEGER;
   `);
 }
 
