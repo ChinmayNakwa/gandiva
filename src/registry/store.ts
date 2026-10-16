@@ -125,12 +125,52 @@ export function registerExternal(input: unknown): Service {
   const existing = getService(id);
   if (existing) {
     if (existing.owner === SEED_OWNER) throw new RegistryError(`"${id}" is a built-in marketplace service and cannot be overwritten; choose another id`, 403);
+    // A payTo address is public, so it proves nothing; wallet-owned listings are changed only by a signed-in owner.
+    if (isWalletOwner(existing.owner)) throw new RegistryError(`"${id}" belongs to a signed-in wallet; it can only be changed from the Sell tab by that wallet`, 403);
     if (existing.payTo.toLowerCase() !== s.payTo.toLowerCase()) throw new RegistryError(`"${id}" is already listed by a different payTo; choose another id`);
   } else {
     const { n } = db.prepare("SELECT COUNT(*) AS n FROM services WHERE owner != ?").get(SEED_OWNER) as { n: number };
     if (n >= MAX_EXTERNAL_SERVICES) throw new RegistryError(`registry is full (${MAX_EXTERNAL_SERVICES} external listings)`, 403);
   }
   return upsertService({ ...s, id });
+}
+
+export const MAX_LISTINGS_PER_WALLET = 20;
+export const walletOwner = (address: string) => `wallet:${address.toLowerCase()}`;
+const isWalletOwner = (owner: string) => owner.startsWith("wallet:");
+
+/**
+ * Listing made by a signed-in wallet (Sell tab). Earnings always go to that wallet (payTo is forced), and only that wallet
+ * can change or remove the listing again. Posting an id that already belongs to this wallet updates it.
+ */
+export function registerForWallet(input: unknown, wallet: string): Service {
+  const owner = walletOwner(wallet);
+  const s = serviceInput.parse({ ...(input as object), payTo: wallet, owner });
+  const id = s.id ?? slug(s.name);
+  if (!/^[a-z0-9-]{2,64}$/.test(id)) throw new RegistryError("name must contain letters or numbers (the listing id is made from it)", 409);
+  const existing = getService(id);
+  if (existing) {
+    if (existing.owner === SEED_OWNER) throw new RegistryError(`"${id}" is a built-in marketplace service and cannot be overwritten; choose another name`, 403);
+    if (existing.owner !== owner) throw new RegistryError(`"${id}" is already listed by someone else; choose another name`, 409);
+  } else {
+    const mine = listByOwner(wallet).length;
+    if (mine >= MAX_LISTINGS_PER_WALLET) throw new RegistryError(`you already have ${MAX_LISTINGS_PER_WALLET} listings; delete one first`, 403);
+    const { n } = db.prepare("SELECT COUNT(*) AS n FROM services WHERE owner != ?").get(SEED_OWNER) as { n: number };
+    if (n >= MAX_EXTERNAL_SERVICES) throw new RegistryError(`registry is full (${MAX_EXTERNAL_SERVICES} external listings)`, 403);
+  }
+  return upsertService({ ...s, id });
+}
+
+export function listByOwner(wallet: string): Service[] {
+  return db.prepare("SELECT * FROM services WHERE owner = ? ORDER BY created_at DESC, id").all(walletOwner(wallet)).map(rowToService);
+}
+
+/** Removes a listing only if this wallet owns it. */
+export function deleteOwnedService(id: string, wallet: string): "deleted" | "not_found" | "not_yours" {
+  const existing = getService(id);
+  if (!existing) return "not_found";
+  if (existing.owner !== walletOwner(wallet)) return "not_yours";
+  return deleteService(id) ? "deleted" : "not_found";
 }
 
 export function deleteService(id: string) {

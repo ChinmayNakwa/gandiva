@@ -25,6 +25,7 @@
     "judge:interop": "tsx scripts/judge/interop-seller.ts",
     "interop:ref-seller": "tsx scripts/interop/ref-seller.ts",
     "interop:ref-buyer": "tsx scripts/interop/ref-buyer.ts",
+    "dev:seller": "tsx scripts/dev/sell-test-seller.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

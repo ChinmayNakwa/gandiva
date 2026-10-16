@@ -1,11 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
+import { currentUser } from "../auth/routes.js";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
-import { deleteService, getService, listLedger, listSales, RegistryError, registerExternal, reputationFor, searchServices } from "./store.js";
+import { deleteOwnedService, deleteService, getService, listByOwner, listLedger, listSales, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
 
 export const registry = new Hono();
 
@@ -43,6 +44,44 @@ registry.post(
     }
   },
 );
+
+// Signed-in sellers (Sell tab): list, update and delete their own listings. payTo is always the signed-in wallet.
+const signedIn = (c: Context) => currentUser(c);
+
+registry.get("/mine", (c) => {
+  const me = signedIn(c);
+  if (!me) return c.json({ error: "sign in with your wallet first" }, 401);
+  return c.json({ address: me, services: listByOwner(me).map((s) => ({ ...s, reputation: reputationFor(s.id) })) });
+});
+
+registry.post(
+  "/mine/services",
+  bodyLimit({ maxSize: MAX_LISTING_BYTES, onError: (c) => c.json({ error: `listing too large (max ${MAX_LISTING_BYTES} bytes)` }, 413) }),
+  async (c) => {
+    const me = signedIn(c);
+    if (!me) return c.json({ error: "sign in with your wallet first" }, 401);
+    try {
+      const body = await c.req.json();
+      const blocked = typeof body?.endpoint === "string" ? await endpointBlockedReason(body.endpoint) : null;
+      if (blocked) return c.json({ error: blocked }, 400);
+      const listed = registerForWallet(body, me);
+      await verifyService(listed);
+      return c.json(getService(listed.id), 201);
+    } catch (err) {
+      if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
+      if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);
+      return c.json({ error: "body must be valid JSON" }, 400);
+    }
+  },
+);
+
+registry.delete("/mine/services/:id", (c) => {
+  const me = signedIn(c);
+  if (!me) return c.json({ error: "sign in with your wallet first" }, 401);
+  const result = deleteOwnedService(c.req.param("id"), me);
+  if (result === "deleted") return c.json({ ok: true });
+  return result === "not_yours" ? c.json({ error: "this listing belongs to another wallet" }, 403) : c.json({ error: "service not found" }, 404);
+});
 
 registry.delete("/services/:id", (c) => {
   if (!config.adminToken) return c.json({ error: "deleting listings is disabled (ADMIN_TOKEN is not set)" }, 403);
