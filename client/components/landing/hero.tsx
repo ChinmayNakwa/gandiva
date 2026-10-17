@@ -1,23 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { motion, type Variants } from "motion/react";
+import { motion } from "motion/react";
 import { ArrowRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fadeUp as item, stagger } from "@/lib/motion";
+import { HeroTitle } from "./hero-title";
+import { LiveTicker } from "./live-ticker";
 
-const container: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
-};
-
-const item: Variants = {
-  hidden: { opacity: 0, y: 16 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
-  },
-};
+const container = stagger();
 
 const LINES = [
   { t: "$ npm run task -- \"cheapest 5-star books, pages 1→4\" 0.05 3", c: "text-foreground" },
@@ -31,21 +22,13 @@ const LINES = [
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
+      {/* Static warm glow and paper grid: no filters or looping motion, so it
+          costs nothing on weak GPUs. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(40rem_28rem_at_30%_-10%,color-mix(in_oklch,var(--primary)_16%,transparent),transparent_70%),radial-gradient(32rem_24rem_at_85%_0%,color-mix(in_oklch,var(--gold)_18%,transparent),transparent_70%)]"
       >
-        <motion.div
-          className="absolute -top-48 left-1/4 h-[34rem] w-[34rem] rounded-full bg-primary/20 blur-[120px]"
-          animate={{ x: [0, 40, -20, 0], y: [0, -30, 20, 0], scale: [1, 1.08, 0.96, 1] }}
-          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute -top-24 right-[12%] h-[26rem] w-[26rem] rounded-full bg-info/15 blur-[120px]"
-          animate={{ x: [0, -30, 20, 0], y: [0, 30, -20, 0] }}
-          transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <div className="absolute inset-0 grid-backdrop opacity-30 [mask-image:radial-gradient(ellipse_at_center,black,transparent_72%)]" />
+        <div className="absolute inset-0 grid-backdrop opacity-25 mask-[radial-gradient(ellipse_at_center,black,transparent_72%)]" />
       </div>
 
       <motion.div
@@ -62,14 +45,7 @@ export function Hero() {
             x402 v2 · Base Sepolia · USDC
           </motion.span>
 
-          <motion.h1
-            variants={item}
-            className="mt-6 font-heading text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl"
-          >
-            The agent economy,
-            <br />
-            settled <span className="text-primary">per call</span>.
-          </motion.h1>
+          <HeroTitle />
 
           <motion.p
             variants={item}
@@ -90,6 +66,10 @@ export function Hero() {
             <Button asChild size="lg" variant="outline">
               <Link href="/run">Run a task</Link>
             </Button>
+          </motion.div>
+
+          <motion.div variants={item} className="mt-8">
+            <LiveTicker />
           </motion.div>
         </div>
 
