@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saveListing, type ListingForm } from "@/lib/api";
 import { toUnits, usdc } from "@/lib/format";
 import type { Service } from "@/lib/types";
+import { ListingPreview, priceProblem } from "./listing-preview";
+import { Wizard, type WizardStep } from "./wizard";
 
 const FIELD =
   "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
@@ -57,6 +58,34 @@ function parseSchema(label: string, text: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function schemaProblem(label: string, text: string): string | null {
+  try {
+    parseSchema(label, text);
+    return null;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+function parsedOrUndefined(text: string) {
+  try {
+    return parseSchema("", text);
+  } catch {
+    return undefined;
+  }
+}
+
+function endpointProblem(text: string): string | null {
+  const url = text.trim();
+  if (!url) return "Add the URL buyers will call.";
+  try {
+    if (/^https?:$/.test(new URL(url).protocol)) return null;
+  } catch {
+    // not a URL at all; fall through
+  }
+  return "The endpoint must be a full http(s) URL, like https://my-server.example/weather.";
+}
+
 export function ListingFormCard({
   wallet,
   editing,
@@ -73,7 +102,8 @@ export function ListingFormCard({
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
-  async function submit() {
+  /** True when a new listing was saved, so the wizard starts over. */
+  async function submit(): Promise<boolean> {
     setError(null);
     try {
       const price = toUnits(form.priceUsdc);
@@ -94,102 +124,159 @@ export function ListingFormCard({
       const saved = await saveListing(body);
       onSaved(saved);
       if (!editing) setForm(STARTER);
+      return !editing;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the listing.");
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
+  const inputProblem = schemaProblem("Input schema", form.inputSchema);
+  const outputProblem = schemaProblem("Output schema", form.outputSchema);
+
+  const steps: WizardStep[] = [
+    {
+      title: "Basics",
+      hint: "What buyer agents see when they browse the marketplace.",
+      problem: form.name.trim() ? null : "Give your seller a name.",
+      content: (
+        <>
+          <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="name" className="text-xs text-muted-foreground">
+                Name
+              </Label>
+              <Input id="name" className="font-mono" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="my-weather-api" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="category" className="text-xs text-muted-foreground">
+                Category
+              </Label>
+              <select id="category" className={FIELD} value={form.category} onChange={(e) => set({ category: e.target.value })}>
+                <option value="data">data</option>
+                <option value="inference">inference</option>
+                <option value="scraping">scraping</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="description" className="text-xs text-muted-foreground">
+              Description
+            </Label>
+            <Input id="description" value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder="What does it do? (the buyer agent reads this)" />
+          </div>
+        </>
+      ),
+    },
+    {
+      title: "Endpoint & price",
+      hint: "Where buyers call you, and what each call costs.",
+      problem: endpointProblem(form.endpoint) ?? priceProblem(form.priceUsdc),
+      content: (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="endpoint" className="text-xs text-muted-foreground">
+              Endpoint URL (must answer with an x402 402 before payment)
+            </Label>
+            <Input id="endpoint" className="font-mono" value={form.endpoint} onChange={(e) => set({ endpoint: e.target.value })} placeholder="https://my-server.example/weather" />
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:max-w-sm">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="method" className="text-xs text-muted-foreground">
+                Method
+              </Label>
+              <select id="method" className={FIELD} value={form.method} onChange={(e) => set({ method: e.target.value as "GET" | "POST" })}>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="price" className="text-xs text-muted-foreground">
+                Price (USDC / call)
+              </Label>
+              <Input id="price" inputMode="decimal" className="font-mono" value={form.priceUsdc} onChange={(e) => set({ priceUsdc: e.target.value })} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Payments go to your signed-in wallet <span className="font-mono break-all text-foreground">{wallet}</span>. Your endpoint&apos;s 402 must ask for this price and payTo, or the listing is flagged.
+          </p>
+        </>
+      ),
+    },
+    {
+      title: "Schemas & list",
+      hint: "The buyer checks your answer against the output schema before it pays.",
+      problem: inputProblem ?? outputProblem,
+      content: (
+        <>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SchemaField id="input" label="Input schema (JSON Schema of the query or body)" value={form.inputSchema} problem={inputProblem} onChange={(v) => set({ inputSchema: v })} />
+            <SchemaField id="output" label="Output schema (JSON Schema of the answer)" value={form.outputSchema} problem={outputProblem} onChange={(v) => set({ outputSchema: v })} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            When you list it, the registry asks your endpoint for its 402 and shows whether it matches what you listed here.
+          </p>
+        </>
+      ),
+    },
+  ];
+
   return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!saving) void submit();
-      }}
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="name" className="text-xs text-muted-foreground">
-            Name
-          </Label>
-          <Input id="name" className="font-mono" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="my-weather-api" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="category" className="text-xs text-muted-foreground">
-            Category
-          </Label>
-          <select id="category" className={FIELD} value={form.category} onChange={(e) => set({ category: e.target.value })}>
-            <option value="data">data</option>
-            <option value="inference">inference</option>
-            <option value="scraping">scraping</option>
-          </select>
-        </div>
-      </div>
+    <Wizard
+      steps={steps}
+      submitting={saving}
+      error={error}
+      submitLabel={editing ? "Save changes" : "List my seller"}
+      submittingLabel="Saving and checking the endpoint…"
+      onSubmit={submit}
+      onCancel={editing ? onCancel : undefined}
+      preview={
+        <ListingPreview
+          draft={{
+            ...form,
+            wallet,
+            inputSchema: parsedOrUndefined(form.inputSchema),
+            outputSchema: parsedOrUndefined(form.outputSchema),
+          }}
+        />
+      }
+    />
+  );
+}
 
-      <div className="grid gap-4 sm:grid-cols-[1fr_8rem_8rem]">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="endpoint" className="text-xs text-muted-foreground">
-            Endpoint URL (must answer with an x402 402 before payment)
-          </Label>
-          <Input id="endpoint" className="font-mono" value={form.endpoint} onChange={(e) => set({ endpoint: e.target.value })} placeholder="https://my-server.example/weather" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="method" className="text-xs text-muted-foreground">
-            Method
-          </Label>
-          <select id="method" className={FIELD} value={form.method} onChange={(e) => set({ method: e.target.value as "GET" | "POST" })}>
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="price" className="text-xs text-muted-foreground">
-            Price (USDC / call)
-          </Label>
-          <Input id="price" inputMode="decimal" className="font-mono" value={form.priceUsdc} onChange={(e) => set({ priceUsdc: e.target.value })} />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="description" className="text-xs text-muted-foreground">
-          Description
-        </Label>
-        <Input id="description" value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder="What does it do? (the buyer agent reads this)" />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="input" className="text-xs text-muted-foreground">
-            Input schema (JSON Schema of the query or body)
-          </Label>
-          <textarea id="input" rows={8} spellCheck={false} className={FIELD + " resize-y font-mono text-xs"} value={form.inputSchema} onChange={(e) => set({ inputSchema: e.target.value })} />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="output" className="text-xs text-muted-foreground">
-            Output schema (JSON Schema of the answer; the buyer checks it)
-          </Label>
-          <textarea id="output" rows={8} spellCheck={false} className={FIELD + " resize-y font-mono text-xs"} value={form.outputSchema} onChange={(e) => set({ outputSchema: e.target.value })} />
-        </div>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Payments for this listing go to your signed-in wallet <span className="font-mono text-foreground">{wallet}</span>. The registry asks your endpoint for its 402 and shows whether it matches what you listed here.
-      </p>
-
-      {error ? <p className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{error}</p> : null}
-
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={saving || !form.name.trim() || !form.endpoint.trim()}>
-          {saving ? "Saving and checking the endpoint…" : editing ? "Save changes" : "List my seller"}
-        </Button>
-        {editing ? (
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
-            Cancel
-          </Button>
-        ) : null}
-      </div>
-    </form>
+function SchemaField({
+  id,
+  label,
+  value,
+  problem,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  problem: string | null;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="text-xs text-muted-foreground">
+        {label}
+      </Label>
+      <textarea
+        id={id}
+        rows={8}
+        spellCheck={false}
+        aria-invalid={problem ? true : undefined}
+        aria-describedby={`${id}-check`}
+        className={FIELD + " resize-y font-mono text-xs aria-invalid:border-warn"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span id={`${id}-check`} className={"font-mono text-[11px] " + (problem ? "text-warn" : "text-ok")}>
+        {problem ?? "valid JSON object"}
+      </span>
+    </div>
   );
 }
