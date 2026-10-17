@@ -94,10 +94,10 @@ export function LedgerTable({
                 <TableCell>
                   <AddrLink address={e.seller} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="min-w-[12rem]">
                   <div className="text-sm">{e.service_name}</div>
                   {e.reason ? (
-                    <div className="max-w-[20rem] text-[11px] text-muted-foreground">
+                    <div className="max-w-[20rem] whitespace-normal text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
                       {e.reason}
                     </div>
                   ) : null}

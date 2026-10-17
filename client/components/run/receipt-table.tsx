@@ -84,7 +84,7 @@ export function ReceiptTable({ purchases }: { purchases: Purchase[] }) {
                 <TableCell>
                   <StatusBadge status={p.status} />
                   {p.reason ? (
-                    <div className="mt-1 max-w-[22rem] text-[11px] text-muted-foreground">
+                    <div className="mt-1 max-w-[22rem] whitespace-normal text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
                       {p.reason}
                     </div>
                   ) : null}

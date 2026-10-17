@@ -25,7 +25,7 @@ export function WalletButton() {
   return (
     <div className="flex items-center gap-2">
       {error ? (
-        <span className="hidden max-w-56 truncate text-xs text-bad lg:inline" title={error}>
+        <span className="max-w-40 truncate text-xs text-bad sm:max-w-72" title={error}>
           {error}
         </span>
       ) : null}
