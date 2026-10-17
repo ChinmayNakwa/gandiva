@@ -4,6 +4,7 @@ import type { Ref } from "react";
 import { motion } from "motion/react";
 import { LinkIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { CredibilityBadge } from "./credibility-badge";
 import { CategoryBadge } from "@/components/status-badge";
 import { AddrLink } from "@/components/tx-link";
 import { ADVERSARIAL_IDS, CHAIN_IDS, pct, usdc } from "@/lib/format";
@@ -81,6 +82,9 @@ export function ServiceCard({
               {usdc(service.price)}
             </span>
             <span className="text-xs text-muted-foreground">USDC / call</span>
+            {service.credibility ? (
+              <CredibilityBadge score={service.credibility.score} level={service.credibility.level} className="ml-auto self-center" />
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-1">

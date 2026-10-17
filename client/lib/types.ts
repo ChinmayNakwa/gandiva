@@ -35,6 +35,26 @@ export interface Service {
   verificationNote: string;
   verifiedAt: string | null;
   reputation: Reputation;
+  /** Summary of the no-KYC credibility checks; null until the server has scored the listing. */
+  credibility?: { score: number; level: CredibilityLevel } | null;
+}
+
+export type CredibilityLevel = "high" | "medium" | "low" | "unproven";
+
+export interface CredibilityCheck {
+  id: "protocol" | "ownership" | "track_record" | "stake" | "wallet_history" | "transport" | "tenure";
+  label: string;
+  status: "pass" | "partial" | "fail" | "unknown";
+  points: number;
+  max: number;
+  detail: string;
+}
+
+export interface Credibility {
+  score: number;
+  level: CredibilityLevel;
+  checks: CredibilityCheck[];
+  computedAt: string;
 }
 
 export interface StakePosition {

@@ -91,6 +91,22 @@ npm run stake:seed           # built-in sellers stake part of their earnings (si
 
 Sellers stake from the Sell tab: they sign in their wallet and pay no gas. The contract tests run in an in-process EVM (`tests/sellerStake.test.ts`).
 
+### Credibility without KYC
+
+Each listing gets a score out of 100 from proofs a seller can give with code, keys or money, never identity documents. `GET /registry/services/:id/credibility` returns the breakdown.
+
+| Check | Points | How it is proven |
+|---|---|---|
+| x402 conformance | 20 | A live probe of the endpoint returns a 402 that matches the listing |
+| Controls its payout wallet | 15 | A signature from the payTo key: `POST /registry/services/:id/proof`, a wallet sign-in on the Sell tab, or a stake (which needs that key) |
+| Track record | 25 | Valid-output rate from the buyer's ledger; full credit from 10 calls |
+| Stake | 20 | USDC bonded in SellerStake; full credit from 0.05, minus 5 per slash |
+| On-chain wallet history | 10 | The payTo has sent transactions or holds USDC on Base Sepolia |
+| HTTPS | 5 | The endpoint uses TLS |
+| Listing age | 5 | Listed for at least an hour |
+
+Credibility breaks ties in ranking: after reputation and price, before latency. The built-in sellers' proofs are signed at boot with their keys from `.env`.
+
 ## License
 
 ISC
