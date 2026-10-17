@@ -30,9 +30,15 @@ const briefAddr = privateKeyToAccount(get("TRAVEL_BRIEF_KEY") as `0x${string}`).
 set("PAYTO_TRAVEL_BRIEF", briefAddr);
 rows.push(["travel-brief", briefAddr]);
 
+// The stake arbiter deploys SellerStake, relays gasless stakes and slashes junk sellers to refund buyers. It pays gas, so it needs ETH.
+if (!get("ARBITER_PRIVATE_KEY")) set("ARBITER_PRIVATE_KEY", generatePrivateKey());
+const arbiterAddr = privateKeyToAccount(get("ARBITER_PRIVATE_KEY") as `0x${string}`).address;
+rows.push(["stake arbiter", arbiterAddr]);
+
 writeFileSync(ENV, text);
 console.log("Testnet wallets (Base Sepolia). Keys are in .env, which is gitignored.\n");
 for (const [name, addr] of rows) console.log(`  ${name.padEnd(16)} ${addr}`);
 console.log(`\nFund the buyer with testnet USDC: https://faucet.circle.com  (network: Base Sepolia, address: ${rows[0][1]})`);
 console.log("No ETH is needed: the x402 facilitator pays gas for EIP-3009 transfers.");
 console.log(`The travel-brief seller hires other sellers and pays them first, so it also needs a little USDC float: ${briefAddr}`);
+console.log(`The stake arbiter pays gas for SellerStake, so it needs a little Base Sepolia ETH (about 0.01): ${arbiterAddr}`);
