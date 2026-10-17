@@ -5,6 +5,7 @@ import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { fromUnits, NETWORK } from "../config.js";
 import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
+import { slashForJunk } from "../stake/index.js";
 import type { BudgetLedger } from "./budget.js";
 import { endpointBlockedReason } from "./endpointGuard.js";
 import { validate } from "./schema.js";
@@ -130,6 +131,11 @@ export class SafePayer {
       const latencyMs = Date.now() - started;
       try {
         const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs, auth });
+        // Proven seller fault after taking the money (broke its own schema, or charged for an error): refund from its stake.
+        // A lost response body is not proof, since the fault may be on our side of the network.
+        if (r.status === "paid_output_rejected" && /^(output breaks listed schema|seller settled but returned)/.test(r.reason ?? "")) {
+          void slashForJunk({ ledgerId: row.id, seller: service.payTo, buyer: this.address, paid: r.paid, txHash: r.txHash, service: service.name });
+        }
         return { ...r, ok: r.status === "paid", latencyMs, ledgerId: row.id };
       } finally {
         // Only now does the ledger carry this payment, so only now can the wallet cap stop counting it as in flight.

@@ -63,6 +63,11 @@ export const config = {
   },
   // The agent-chain seller pays the sellers it hires from this wallet (testnet only).
   travelBriefKey: env("TRAVEL_BRIEF_KEY") as `0x${string}` | "",
+  // SellerStake: sellers stake USDC; the arbiter (this key) relays gasless stakes and slashes proven junk to refund the buyer.
+  stake: {
+    contract: env("STAKE_CONTRACT") as `0x${string}` | "",
+    arbiterKey: env("ARBITER_PRIVATE_KEY") as `0x${string}` | "",
+  },
 };
 
 // A function declaration (not a const) so `config` above can use it while the module is still evaluating.

@@ -9,6 +9,7 @@ import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
 import { mcp } from "./mcp/server.js";
 import { verifyBuiltIns } from "./registry/probe.js";
+import { stakeEnabled } from "./stake/index.js";
 import { registry } from "./registry/routes.js";
 import { activeSellerDefs, buildSellers, seedRegistry } from "./sellers/index.js";
 import { startSellerProcesses } from "./sellers/supervisor.js";
@@ -70,6 +71,7 @@ serve({ fetch: app.fetch, port: config.port }, () => {
   verifyBuiltIns()
     .then(() => console.log("  registry   built-in listings probed"))
     .catch((err) => console.error(`  registry   probing built-ins failed: ${err.message}`));
+  if (stakeEnabled()) console.log(`  stake      SellerStake ${config.stake.contract}`);
 });
 
 getResourceServer()

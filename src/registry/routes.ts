@@ -8,6 +8,7 @@ import { listWithdrawals } from "../agents/wallet.js";
 import { listHostedFor } from "../hosted/agents.js";
 import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
+import { stakeRoutes } from "../stake/routes.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
 import { deleteOwnedService, deleteService, getService, listByOwner, listLedger, listSales, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
 
@@ -58,6 +59,7 @@ registry.get("/mine", (c) => {
 });
 
 registry.route("/mine/llm-agents", hostedRoutes);
+registry.route("/stake", stakeRoutes);
 
 registry.post(
   "/mine/services",
