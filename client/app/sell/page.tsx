@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LlmAgentForm } from "@/components/sell/llm-agent-form";
 import { ListingFormCard } from "@/components/sell/listing-form";
 import { MyListings } from "@/components/sell/my-listings";
+import { StakePanel } from "@/components/sell/stake-panel";
 import { fetcher } from "@/lib/api";
 import type { AgentInfo, Service } from "@/lib/types";
 
@@ -108,6 +109,15 @@ export default function SellPage() {
                 <ListingFormCard key={`endpoint:${editing?.id ?? "new"}`} wallet={address} editing={editing} onCancel={() => setEditing(null)} onSaved={done} />
               )}
               {saved ? <p className="mt-3 rounded-lg border border-ok/40 bg-ok/10 px-3 py-2 text-sm text-ok">{saved}</p> : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Stake (seller bond)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <StakePanel wallet={address} />
             </CardContent>
           </Card>
 

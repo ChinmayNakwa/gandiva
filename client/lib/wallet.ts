@@ -43,6 +43,39 @@ export function walletErrorMessage(err: unknown): string | null {
   return e?.shortMessage || e?.message || "sign-in failed";
 }
 
+export interface TypedDataRequest {
+  domain: Record<string, unknown>;
+  types: Record<string, { name: string; type: string }[]>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
+/**
+ * Signs EIP-712 data from the server (stake, unstake) in the browser wallet on Base Sepolia. Signing is free: nothing is
+ * sent on chain from the user's wallet; the server relays it.
+ */
+export async function signTypedDataWithWallet(req: TypedDataRequest): Promise<{ account: string; signature: string }> {
+  if (!window.ethereum) throw new Error("No browser wallet found. Install MetaMask and reload the page.");
+  const wallet = createWalletClient({ chain: baseSepolia, transport: custom(window.ethereum) });
+  const [account] = await wallet.requestAddresses();
+  if (!account) throw new Error("The wallet did not share an account.");
+  try {
+    await wallet.switchChain({ id: baseSepolia.id });
+  } catch {
+    await wallet.addChain({ chain: baseSepolia });
+    await wallet.switchChain({ id: baseSepolia.id });
+  }
+  // Integers arrive as strings over JSON; EIP-712 wants them as numbers.
+  const fields = req.types[req.primaryType] ?? [];
+  const message = Object.fromEntries(
+    Object.entries(req.message).map(([k, v]) => [k, /^u?int\d*$/.test(fields.find((f) => f.name === k)?.type ?? "") ? BigInt(v as string) : v]),
+  );
+  // The typed-data shape is only known at runtime, so viem's generic types can't check it.
+  const sign = wallet.signTypedData as (args: Record<string, unknown>) => Promise<`0x${string}`>;
+  const signature = await sign({ account, domain: req.domain, types: req.types, primaryType: req.primaryType, message });
+  return { account, signature };
+}
+
 /** Sends USDC from the user's own wallet to their agent wallet (a normal token transfer; the user pays the gas in Base Sepolia ETH). */
 export async function fundAgentWallet(opts: { agent: string; usdc: string; units: string }, onSent?: (hash: string) => void): Promise<string> {
   if (!window.ethereum) throw new Error("No browser wallet found. Install MetaMask and reload the page.");

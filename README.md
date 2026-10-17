@@ -71,6 +71,26 @@ npm run task -- "<task>" 0.05 3
 
 > ⚠️ Testnet only. Never put mainnet keys in `.env`.
 
+## Seller trust, comparison and scheduling
+
+### Seller staking (SellerStake on Base Sepolia)
+
+`contracts/SellerStake.sol` lets sellers bond USDC behind their listings:
+
+- **Staking needs no gas.** The seller signs a USDC `ReceiveWithAuthorization` (EIP-3009) to the contract, and the registry's arbiter wallet relays it.
+- **Junk triggers a refund.** When the buyer pays and the output then breaks the seller's own schema (or the seller charged for an error), the arbiter calls `slash`. That refunds the buyer what it paid, out of the bond, once per ledger row.
+- **Unstaking** is a signed EIP-712 message, then a cooldown (10 min by default) during which the bond can still be slashed. After that, anyone can trigger `withdraw`, which only ever pays the seller.
+- **Reconciliation is unaffected.** Refunds are transfers *to* the buyer.
+
+```bash
+npm run wallets:new          # creates ARBITER_PRIVATE_KEY and prints its address
+# send ~0.01 Base Sepolia ETH to the arbiter (it pays gas for deploy, relays and slashes)
+npm run stake:deploy         # deploys, writes STAKE_CONTRACT to .env; restart the server
+npm run stake:seed           # built-in sellers stake part of their earnings (signed, relayed)
+```
+
+Sellers stake from the Sell tab: they sign in their wallet and pay no gas. The contract tests run in an in-process EVM (`tests/sellerStake.test.ts`).
+
 ## License
 
 ISC

@@ -37,6 +37,23 @@ export interface Service {
   reputation: Reputation;
 }
 
+export interface StakePosition {
+  staked: string;
+  stakedUsdc: string;
+  unlockAt: number;
+}
+
+export interface StakeOverview {
+  enabled: boolean;
+  contract?: string;
+  arbiter?: string;
+  cooldownSeconds?: number;
+  totalStakedUsdc?: string;
+  minStake?: string;
+  explorer?: string;
+  sellers: (StakePosition & { payTo: string; slashedCount: number; slashed: string })[];
+}
+
 export interface LedgerEntry {
   id: number;
   ts: string;
