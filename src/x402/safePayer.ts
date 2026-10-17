@@ -80,6 +80,13 @@ async function readBody(res: Response) {
 }
 
 /** Buyer-side x402 v2 payer: 402 -> price check -> budget reservation -> sign (standard SDK) -> retry -> schema check -> ledger. */
+/**
+ * Live progress of one paid call, reported for UIs: requesting = first request sent; quoted = a 402 arrived and passed the
+ * listing, budget and cap checks; settling = the payment is signed and sent, and the seller is working and settling on chain.
+ */
+export type CallPhase = "requesting" | "quoted" | "settling";
+export type OnCallPhase = (phase: CallPhase, asked?: bigint) => void;
+
 export class SafePayer {
   readonly account: PrivateKeyAccount;
   private client: x402Client;
@@ -103,8 +110,18 @@ export class SafePayer {
     return this.client.createPaymentPayload(pr);
   }
 
-  async call(service: Service, input: Record<string, unknown>, ctx: { budget: BudgetLedger; runId?: string; timeoutMs?: number }): Promise<CallResult> {
+  async call(
+    service: Service,
+    input: Record<string, unknown>,
+    ctx: { budget: BudgetLedger; runId?: string; timeoutMs?: number; onPhase?: OnCallPhase },
+  ): Promise<CallResult> {
     const started = Date.now();
+    // Progress reporting is best-effort and must never change what the call does.
+    const phase: OnCallPhase = (p, asked) => {
+      try {
+        ctx.onPhase?.(p, asked);
+      } catch {}
+    };
     const timeoutMs = ctx.timeoutMs ?? 90_000;
     const base = { runId: ctx.runId, buyer: this.address, seller: service.payTo, serviceId: service.id, serviceName: service.name, endpoint: service.endpoint, listed: service.price };
     let auth: LedgerEntry["auth"] = null;
@@ -130,6 +147,7 @@ export class SafePayer {
     // Checked again on every call: a listing's DNS can be changed after it was accepted.
     const blocked = await endpointBlockedReason(url);
     if (blocked) return finish({ status: "refused", paid: 0n, reason: `endpoint guard: ${blocked}` });
+    phase("requesting");
     let first: Response;
     try {
       // Never follow redirects: a public endpoint could bounce us to an internal address.
@@ -174,6 +192,7 @@ export class SafePayer {
       const s = this.cap.status();
       return finish({ status: "refused", paid: 0n, asked, reason: `spend cap: wallet limit ${s.limitUsdc} USDC per ${s.windowMinutes} min reached (${s.usedUsdc} used); needs ${fromUnits(asked)}` });
     }
+    phase("quoted", asked);
 
     let paidRes: Response;
     let payload: Awaited<ReturnType<x402Client["createPaymentPayload"]>>;
@@ -186,6 +205,7 @@ export class SafePayer {
     }
     const a = (payload.payload as any)?.authorization;
     if (a?.from && a?.nonce && a?.validBefore) auth = { from: String(a.from), nonce: String(a.nonce), validBefore: Number(a.validBefore), signedAt: Math.floor(Date.now() / 1000) };
+    phase("settling", asked);
     try {
       paidRes = await fetch(url, {
         ...init,

@@ -2,7 +2,7 @@ import pLimit from "p-limit";
 import { EXPLORER_TX, fromUnits } from "../config.js";
 import type { Category, Service, ServiceWithReputation } from "../registry/store.js";
 import type { BudgetLedger } from "../x402/budget.js";
-import type { CallResult } from "../x402/safePayer.js";
+import type { CallPhase, CallResult, OnCallPhase } from "../x402/safePayer.js";
 import type { TaskPlan } from "./planner.js";
 
 export interface Purchase {
@@ -40,6 +40,19 @@ export interface Quote {
   note: string;
 }
 
+/** A paid call that is happening right now, for the live Run view. It leaves the list when its Purchase is recorded. */
+export interface InflightCall {
+  id: number;
+  step: string;
+  service: string;
+  serviceId: string;
+  phase: CallPhase;
+  /** Amount the 402 asked for, once a quote has passed the checks. */
+  asked?: string;
+  startedAt: string;
+  phaseAt: string;
+}
+
 export interface RunState {
   id: string;
   task: string;
@@ -57,6 +70,7 @@ export interface RunState {
   plan?: TaskPlan;
   planner?: string;
   purchases: Purchase[];
+  inflight?: InflightCall[];
   result?: any;
   quote?: Quote;
   explanation?: string;
@@ -66,7 +80,11 @@ export interface RunState {
   finishedAt?: string;
 }
 
-export type PayFn = (service: Service, input: Record<string, unknown>, ctx: { budget: BudgetLedger; runId?: string }) => Promise<CallResult>;
+export type PayFn = (
+  service: Service,
+  input: Record<string, unknown>,
+  ctx: { budget: BudgetLedger; runId?: string; onPhase?: OnCallPhase },
+) => Promise<CallResult>;
 
 export const usd = (u: bigint | string) => fromUnits(u);
 
@@ -86,6 +104,28 @@ export class Ctx {
   }
   log(msg: string) {
     this.run.log.push(`${new Date().toISOString().slice(11, 19)} ${msg}`);
+  }
+  private calls = 0;
+  /** Pay one seller, listing the call in `run.inflight` with its live phase until it returns. */
+  async payTracked(step: string, s: Service, input: Record<string, unknown>): Promise<CallResult> {
+    const now = () => new Date().toISOString();
+    const entry: InflightCall = { id: ++this.calls, step, service: s.name, serviceId: s.id, phase: "requesting", startedAt: now(), phaseAt: now() };
+    const list = (this.run.inflight ??= []);
+    list.push(entry);
+    try {
+      return await this.pay(s, input, {
+        budget: this.budget,
+        runId: this.run.id,
+        onPhase: (phase, asked) => {
+          entry.phase = phase;
+          entry.phaseAt = now();
+          if (asked !== undefined) entry.asked = asked.toString();
+        },
+      });
+    } finally {
+      const i = list.indexOf(entry);
+      if (i >= 0) list.splice(i, 1);
+    }
   }
 }
 
@@ -132,11 +172,11 @@ export async function buyFrom(ctx: Ctx, poolKey: string, ranked: ServiceWithRepu
   for (const [i, s] of candidates.entries()) {
     if (budgetBlocked && BigInt(s.price) >= BigInt(candidates[i - 1].price)) continue;
     const reason = why(s, ranked.indexOf(s) + 1, ranked.length);
-    let r = await ctx.limit(() => ctx.pay(s, input, { budget: ctx.budget, runId: ctx.run.id }));
+    let r = await ctx.limit(() => ctx.payTracked(step, s, input));
     if (r.reason?.startsWith("payment rejected: settlement failed")) {
       ctx.log(`${step}: ${s.name} settlement failed without charging; retrying once with a fresh signature`);
       await new Promise((res) => setTimeout(res, 1000));
-      r = await ctx.limit(() => ctx.pay(s, input, { budget: ctx.budget, runId: ctx.run.id }));
+      r = await ctx.limit(() => ctx.payTracked(step, s, input));
     }
     ctx.run.purchases.push({
       step,
