@@ -1,17 +1,47 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion, useMotionValue } from "motion/react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { NAV_ITEMS } from "@/lib/nav";
+import { spring } from "@/lib/motion";
 import { InfoBar } from "./info-bar";
 import { LogoLockup } from "./logo";
+import { MobileMenu } from "./mobile-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WalletButton } from "@/components/auth/wallet-button";
 
+/**
+ * How far down the page the reader is, 0..1. Re-measured when the page grows
+ * or shrinks too (live runs add content), and 0 when there is nothing to scroll.
+ */
+function useScrollProgress() {
+  const progress = useMotionValue(0);
+  useEffect(() => {
+    const update = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      progress.set(max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const ro = new ResizeObserver(update);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      ro.disconnect();
+    };
+  }, [progress]);
+  return progress;
+}
+
 export function SiteHeader() {
   const pathname = usePathname();
+  const scrollYProgress = useScrollProgress();
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur">
@@ -27,13 +57,20 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
-                  active
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  "relative isolate rounded-md px-3 py-1.5 text-sm transition-colors",
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
+                {/* One pill that slides to whichever page is active. */}
+                {active ? (
+                  <motion.span
+                    layoutId="nav-pill"
+                    transition={spring.soft}
+                    className="absolute inset-0 -z-10 rounded-md bg-muted"
+                  />
+                ) : null}
                 {item.label}
               </Link>
             );
@@ -46,32 +83,23 @@ export function SiteHeader() {
           </Button>
           <ThemeToggle />
           <WalletButton />
+          <MobileMenu />
         </div>
       </div>
 
       <div className="border-t border-border/60">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 font-mono text-[11px] text-muted-foreground">
+        {/* One line on phones (scrolls sideways) instead of wrapping into a block. */}
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-x-4 overflow-x-auto px-4 py-1.5 font-mono text-[11px] whitespace-nowrap text-muted-foreground scrollbar-none md:flex-wrap">
           <InfoBar />
         </div>
       </div>
 
-      <nav className="flex items-center gap-1 overflow-x-auto border-t border-border/60 px-4 py-1.5 md:hidden">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs whitespace-nowrap transition-colors",
-                active ? "bg-muted text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Reading progress: a vermilion hairline along the header's bottom edge. */}
+      <motion.div
+        aria-hidden
+        style={{ scaleX: scrollYProgress }}
+        className="absolute inset-x-0 -bottom-px h-0.5 origin-left bg-primary"
+      />
     </header>
   );
 }
