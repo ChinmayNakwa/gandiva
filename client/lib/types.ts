@@ -90,6 +90,21 @@ export interface Purchase {
   latencyMs: number;
 }
 
+/** requesting = first request sent; quoted = a 402 passed the checks; settling = signed, seller working and settling on chain. */
+export type CallPhase = "requesting" | "quoted" | "settling";
+
+/** A paid call happening right now. It leaves `Run.inflight` when its Purchase is recorded. */
+export interface InflightCall {
+  id: number;
+  step: string;
+  service: string;
+  serviceId: string;
+  phase: CallPhase;
+  asked?: string;
+  startedAt: string;
+  phaseAt: string;
+}
+
 export interface RunResultBook {
   title: string;
   rating: number;
@@ -156,6 +171,7 @@ export interface Run {
   dryRun?: boolean;
   quote?: Quote;
   purchases: Purchase[];
+  inflight?: InflightCall[];
   result?: RunResult | AgentResult | null;
   explanation?: string;
   spent?: string;
