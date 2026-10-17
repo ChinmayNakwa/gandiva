@@ -85,7 +85,7 @@ const agentForm = z.object({
 });
 
 /** A model host must be a public https origin, checked again on every call (DNS can change). */
-async function checkHost(raw: string): Promise<string> {
+export async function checkHost(raw: string): Promise<string> {
   let url: URL;
   try {
     url = new URL(raw);

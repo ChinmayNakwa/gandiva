@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { AgentWalletError, getAgentPayer, usdcBalance } from "../agents/wallet.js";
+import { resolvePlannerLlm } from "../agents/llm.js";
 import { currentUser } from "../auth/routes.js";
+import { HostedError } from "../hosted/agents.js";
 import { config, fromUnits, toUnits } from "../config.js";
 import { buyCategory, buyOnce, getRun, listRuns, startTask } from "./scout.js";
 
@@ -25,7 +27,9 @@ buyer.post("/run", async (c) => {
     // Signed in: the run pays from this user's own agent wallet, and only if it holds enough. Otherwise: the shared demo wallet.
     const user = currentUser(c);
     let payer;
+    let llm;
     if (user) {
+      llm = await resolvePlannerLlm(user);
       payer = getAgentPayer(user);
       if (!dryRun) {
         const held = await usdcBalance(payer.address);
@@ -42,10 +46,11 @@ buyer.post("/run", async (c) => {
       mode: ["agent", "legacy", "auto"].includes(body.mode) ? body.mode : undefined,
       payer,
       owner: user ?? undefined,
+      llm,
     });
     return c.json({ runId: run.id, status: `/buyer/runs/${run.id}` }, 202);
   } catch (err: any) {
-    if (err instanceof AgentWalletError) return c.json({ error: err.message }, err.status);
+    if (err instanceof AgentWalletError || err instanceof HostedError) return c.json({ error: err.message }, err.status);
     return c.json({ error: err?.message ?? String(err) }, 400);
   }
 });

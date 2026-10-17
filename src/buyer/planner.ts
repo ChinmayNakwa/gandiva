@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chat } from "../llm.js";
+import { chatWith, type PlannerLlm } from "../llm.js";
 
 export const taskPlan = z.object({
   pages: z.object({ from: z.number().int().min(1).max(50), to: z.number().int().min(1).max(50) }),
@@ -61,8 +61,8 @@ export function parseRules(task: string): Partial<TaskPlan> {
   return out;
 }
 
-async function parseWithLlm(task: string): Promise<Partial<TaskPlan>> {
-  const raw = await chat(
+async function parseWithLlm(task: string, llm?: PlannerLlm): Promise<Partial<TaskPlan>> {
+  const raw = await chatWith(llm, { json: true, timeoutMs: 30_000, temperature: 0 })(
     [
       {
         role: "system",
@@ -73,12 +73,11 @@ async function parseWithLlm(task: string): Promise<Partial<TaskPlan>> {
       },
       { role: "user", content: task },
     ],
-    { json: true, timeoutMs: 30_000, temperature: 0 },
   );
   return JSON.parse(raw);
 }
 
-export async function planTask(task: string): Promise<{ plan: TaskPlan; planner: string; notes: string[] }> {
+export async function planTask(task: string, userLlm?: PlannerLlm): Promise<{ plan: TaskPlan; planner: string; notes: string[] }> {
   const rules = parseRules(task);
   const notes: string[] = [];
   let planner = "rules";
@@ -86,7 +85,7 @@ export async function planTask(task: string): Promise<{ plan: TaskPlan; planner:
   const missing = (["pages", "limit", "currency"] as const).filter((k) => rules[k] === undefined);
   if (missing.length) {
     try {
-      llm = await parseWithLlm(task);
+      llm = await parseWithLlm(task, userLlm);
       planner = "rules + llm";
       notes.push(`LLM filled: ${missing.join(", ")}`);
     } catch (err: any) {

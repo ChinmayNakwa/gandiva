@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { config, EXPLORER_TX, toUnits } from "../config.js";
 import { db } from "../db.js";
-import { chat } from "../llm.js";
+import { chatWith, type PlannerLlm } from "../llm.js";
 import { getService, searchServices, type Category, type Service } from "../registry/store.js";
 import { BudgetLedger } from "../x402/budget.js";
 import { validateInput } from "../x402/schema.js";
@@ -70,6 +70,8 @@ export interface StartOptions {
   payer?: SafePayer;
   /** Signed-in user who owns the run (lower-case wallet address). */
   owner?: string;
+  /** The signed-in user's own Ollama settings for planning. Kept out of the run, which is shown to the browser. */
+  llm?: PlannerLlm;
 }
 
 const defaultMode = (): NonNullable<StartOptions["mode"]> => {
@@ -98,7 +100,7 @@ export function startTask(opts: StartOptions): RunState {
   };
   runs.set(run.id, run);
   db.prepare("INSERT INTO runs (id, ts, task, budget) VALUES (?,?,?,?)").run(run.id, run.startedAt, run.task, run.budget);
-  executeTask(run, mode, payer).catch((err) => {
+  executeTask(run, mode, payer, opts.llm).catch((err) => {
     run.state = "failed";
     run.log.push(`fatal: ${err?.message ?? err}`);
     run.finishedAt = new Date().toISOString();
@@ -114,14 +116,16 @@ export const beyondBooks = (task: string): string | undefined => {
   return hit?.[0].toLowerCase();
 };
 
-async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]>, payer: SafePayer) {
+async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]>, payer: SafePayer, llm?: PlannerLlm) {
   const budget = new BudgetLedger(BigInt(run.budget));
   const ctx = new Ctx(run, budget, run.maxConcurrency, payWith(payer));
   ctx.log(`${run.dryRun ? "DRY RUN (nothing will be paid). " : ""}budget ${usd(run.budget)} USDC, max_concurrency ${run.maxConcurrency}, buyer ${payer.address}${run.owner ? " (your agent wallet)" : ""}`);
 
+  if (llm) ctx.log(`planning with your own Ollama key (model ${llm.model} at ${llm.host})`);
+
   if (mode !== "legacy") {
     const outcome = await runAgent(ctx, {
-      chat: (messages) => chat(messages, { json: true, timeoutMs: 60_000, temperature: 0 }),
+      chat: chatWith(llm, { json: true, timeoutMs: 60_000, temperature: 0 }),
       services: () => searchServices(),
     });
     if (outcome.handled) {
@@ -144,11 +148,11 @@ async function executeTask(run: RunState, mode: NonNullable<StartOptions["mode"]
     ctx.log("falling back to the built-in books pipeline");
     run.mode = "legacy";
   }
-  await executeLegacy(run, ctx, budget);
+  await executeLegacy(run, ctx, budget, llm);
 }
 
-async function executeLegacy(run: RunState, ctx: Ctx, budget: BudgetLedger) {
-  const { plan, planner, notes } = await planTask(run.task);
+async function executeLegacy(run: RunState, ctx: Ctx, budget: BudgetLedger, llm?: PlannerLlm) {
+  const { plan, planner, notes } = await planTask(run.task, llm);
   run.plan = plan;
   run.planner = planner;
   notes.forEach((n) => ctx.log(n));

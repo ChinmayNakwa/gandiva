@@ -121,7 +121,10 @@ CREATE TABLE IF NOT EXISTS users (
   address TEXT PRIMARY KEY,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   agent_address TEXT,
-  agent_key_enc TEXT
+  agent_key_enc TEXT,
+  llm_host TEXT,
+  llm_model TEXT,
+  llm_key_enc TEXT
 );
 `);
 
@@ -132,6 +135,16 @@ if (!serviceColumns.includes("verification")) {
     ALTER TABLE services ADD COLUMN verification TEXT NOT NULL DEFAULT 'unchecked';
     ALTER TABLE services ADD COLUMN verification_note TEXT NOT NULL DEFAULT '';
     ALTER TABLE services ADD COLUMN verified_at TEXT;
+  `);
+}
+
+// Migrate users created before they could bring their own planner LLM (Ollama) key.
+const userColumns = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
+if (!userColumns.includes("llm_key_enc")) {
+  db.exec(`
+    ALTER TABLE users ADD COLUMN llm_host TEXT;
+    ALTER TABLE users ADD COLUMN llm_model TEXT;
+    ALTER TABLE users ADD COLUMN llm_key_enc TEXT;
   `);
 }
 

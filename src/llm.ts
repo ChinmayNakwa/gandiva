@@ -16,6 +16,27 @@ export interface ChatOptions {
   model?: string;
 }
 
+/** A signed-in user's own Ollama settings for Scout's planning. In memory only; never stored on a run or logged. */
+export interface PlannerLlm {
+  host: string;
+  model: string;
+  apiKey: string;
+}
+
+export const redactSecret = (text: string, secret: string) => (secret ? text.split(secret).join("***") : text);
+
+/** chat() with the user's own host, model and key; a failure message never contains the key. */
+export function chatWith(llm: PlannerLlm | undefined, base: ChatOptions): (messages: ChatMessage[]) => Promise<string> {
+  return async (messages) => {
+    if (!llm) return chat(messages, base);
+    try {
+      return await chat(messages, { ...base, host: llm.host, apiKey: llm.apiKey, model: llm.model });
+    } catch (err: any) {
+      throw new Error(redactSecret(String(err?.message ?? err), llm.apiKey));
+    }
+  };
+}
+
 export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const host = (opts.host ?? config.ollama.host).replace(/\/$/, "");
