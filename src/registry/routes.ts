@@ -10,8 +10,10 @@ import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { stakeRoutes } from "../stake/routes.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
+import { groupServices } from "../buyer/catalogue.js";
+import { stakeOf } from "../stake/index.js";
 import { credibilityCached, credibilityFor, ProofError, proofMessage, submitPayToProof } from "./credibility.js";
-import { deleteOwnedService, deleteService, getService, listByOwner, listLedger, listSales, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
+import { deleteOwnedService, deleteService, explainRank, getService, listByOwner, listLedger, listSales, recentCalls, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
 
 export const registry = new Hono();
 
@@ -49,6 +51,73 @@ registry.post("/services/:id/proof", async (c) => {
   } catch (err: any) {
     return c.json({ error: err instanceof ProofError ? err.message : "invalid signature" }, err?.message === "service not found" ? 404 : 400);
   }
+});
+
+/**
+ * Side-by-side view of the sellers that compete for one job: every parameter the buyer ranks on, normalised for charts,
+ * and for each neighbouring pair the rule that decided the order. ?category=data[&ids=a,b][&selected=id]
+ */
+registry.get("/compare", async (c) => {
+  const { category, ids, selected } = c.req.query();
+  if (!category || !["data", "inference", "scraping"].includes(category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
+  const all = searchServices({ category });
+  // With a selected seller, compare it only with the sellers the buyer would treat as substitutes (same input and output schema).
+  const group = selected ? groupServices(all).find((g) => g.memberIds.includes(selected)) : undefined;
+  const wanted = ids ? new Set(ids.split(",")) : group ? new Set(group.memberIds) : null;
+  const ranked = all.filter((s) => !wanted || wanted.has(s.id));
+  const creds = await Promise.all(ranked.map((s) => credibilityFor(s.id)));
+  const stakes = await Promise.all(ranked.map((s) => stakeOf(s.payTo)));
+  const prices = ranked.map((s) => Number(s.price));
+  const lats = ranked.map((s) => s.reputation.medianLatencyMs).filter((x): x is number => x !== null);
+  const [minP, maxP] = [Math.min(...prices), Math.max(...prices)];
+  const [minL, maxL] = [Math.min(...lats), Math.max(...lats)];
+  const scale = (v: number, lo: number, hi: number) => (hi === lo ? 1 : 1 - (v - lo) / (hi - lo));
+  const candidates = ranked.map((s, i) => ({
+    rank: i + 1,
+    id: s.id,
+    name: s.name,
+    owner: s.owner,
+    payTo: s.payTo,
+    price: s.price,
+    priceUsdc: fromUnits(s.price),
+    verification: s.verification,
+    verificationNote: s.verificationNote,
+    reputation: s.reputation,
+    credibility: creds[i] ?? null,
+    stake: stakes[i],
+    history: recentCalls(s.id),
+    // 0..1, higher is better for the buyer, for radar and bar charts.
+    metrics: {
+      reputation: s.reputation.score,
+      successRate: s.reputation.successRate,
+      cheapness: scale(Number(s.price), minP, maxP),
+      speed: s.reputation.medianLatencyMs === null ? 0 : scale(s.reputation.medianLatencyMs, minL, maxL),
+      credibility: (creds[i]?.score ?? 0) / 100,
+      stake: Math.min(1, Number(stakes[i].staked) / 50_000),
+    },
+  }));
+  const decisions = ranked.slice(1).map((s, i) => ({ ahead: ranked[i].id, behind: s.id, ...explainRank(ranked[i], s) }));
+  const sel = selected ? ranked.find((s) => s.id === selected) : undefined;
+  const selection = sel
+    ? sel.id === ranked[0]?.id
+      ? { id: sel.id, rank: 1, verdict: `${sel.name} is the buyer's first choice for ${category}.` }
+      : { id: sel.id, rank: ranked.indexOf(sel) + 1, verdict: `${ranked[0].name} is tried before ${sel.name}: ${explainRank(ranked[0], sel).detail}.` }
+    : null;
+  return c.json({
+    category,
+    scope: group ? `sellers interchangeable with ${selected} (same input and output schema)` : `every ${category} seller`,
+    otherInCategory: all.length - ranked.length,
+    rules: [
+      "Listings whose live 402 contradicts them go last.",
+      "Higher reputation wins when scores differ by more than 5 points (time-weighted success rate).",
+      "Otherwise the cheaper listing wins.",
+      "Same price: higher credibility wins (proofs, stake, wallet history).",
+      "Still tied: the faster median latency wins.",
+    ],
+    candidates,
+    decisions,
+    selection,
+  });
 });
 
 const MAX_LISTING_BYTES = 32 * 1024;

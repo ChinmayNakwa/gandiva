@@ -234,6 +234,12 @@ export function reputationFor(serviceId: string): Reputation {
   return computeReputation(rows);
 }
 
+/** The last calls the buyer made to a listing, oldest first, for sparklines. */
+export function recentCalls(serviceId: string, limit = 20) {
+  const rows = db.prepare("SELECT ts, status, latency_ms FROM ledger WHERE service_id = ? AND status != 'unconfirmed' ORDER BY id DESC LIMIT ?").all(serviceId, limit) as { ts: string; status: LedgerStatus; latency_ms: number }[];
+  return rows.reverse().map((r) => ({ ts: r.ts, status: r.status, latencyMs: r.latency_ms }));
+}
+
 export function searchServices(q: { category?: string; maxPrice?: string; sort?: string } = {}): ServiceWithReputation[] {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -277,6 +283,30 @@ export function rankCompare(a: ServiceWithReputation, b: ServiceWithReputation) 
   if (dc) return dc;
   return (a.reputation.medianLatencyMs ?? 1e9) - (b.reputation.medianLatencyMs ?? 1e9);
 }
+
+export type RankRule = "verification" | "reputation" | "price" | "credibility" | "latency" | "tie";
+
+/** Which rule of rankCompare put `a` ahead of `b`, in words. Must follow rankCompare step by step. */
+export function explainRank(a: ServiceWithReputation, b: ServiceWithReputation): { rule: RankRule; detail: string } {
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  if ((a.verification === "mismatch") !== (b.verification === "mismatch")) {
+    return { rule: "verification", detail: `${b.name}'s live 402 contradicts its listing, so it goes last whatever its other numbers` };
+  }
+  const ds = a.reputation.score - b.reputation.score;
+  if (Math.abs(ds) > 0.05) return { rule: "reputation", detail: `reputation ${pct(a.reputation.score)} vs ${pct(b.reputation.score)} (more than 5 points apart)` };
+  const dp = BigInt(a.price) - BigInt(b.price);
+  const close = `reputation within 5 points (${pct(a.reputation.score)} vs ${pct(b.reputation.score)})`;
+  if (dp !== 0n) return { rule: "price", detail: `${close}, so the cheaper one wins: ${fromUnitsShort(a.price)} vs ${fromUnitsShort(b.price)} USDC` };
+  const ca = credibilityScore(a.id) ?? 0;
+  const cb = credibilityScore(b.id) ?? 0;
+  if (ca !== cb) return { rule: "credibility", detail: `${close} and the same price, so higher credibility wins: ${ca} vs ${cb}/100` };
+  const la = a.reputation.medianLatencyMs;
+  const lb = b.reputation.medianLatencyMs;
+  if ((la ?? 1e9) !== (lb ?? 1e9)) return { rule: "latency", detail: `same reputation band, price and credibility, so the faster one wins: ${la ?? "untested"} vs ${lb ?? "untested"} ms` };
+  return { rule: "tie", detail: "identical on every parameter; listing order decides" };
+}
+
+const fromUnitsShort = (u: string) => (Number(u) / 1e6).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 
 export interface LedgerEntry {
   runId?: string | null;
