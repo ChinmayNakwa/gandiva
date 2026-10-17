@@ -63,6 +63,35 @@ export interface StakePosition {
   unlockAt: number;
 }
 
+export type CompareMetric = "reputation" | "successRate" | "cheapness" | "speed" | "credibility" | "stake";
+
+export interface CompareCandidate {
+  rank: number;
+  id: string;
+  name: string;
+  owner: string;
+  payTo: string;
+  price: string;
+  priceUsdc: string;
+  verification: Service["verification"];
+  verificationNote: string;
+  reputation: Reputation;
+  credibility: Credibility | null;
+  stake: StakePosition;
+  history: { ts: string; status: LedgerStatus; latencyMs: number }[];
+  metrics: Record<CompareMetric, number>;
+}
+
+export interface CompareResponse {
+  category: Category;
+  scope: string;
+  otherInCategory: number;
+  rules: string[];
+  candidates: CompareCandidate[];
+  decisions: { ahead: string; behind: string; rule: "verification" | "reputation" | "price" | "credibility" | "latency" | "tie"; detail: string }[];
+  selection: { id: string; rank: number; verdict: string } | null;
+}
+
 export interface StakeOverview {
   enabled: boolean;
   contract?: string;

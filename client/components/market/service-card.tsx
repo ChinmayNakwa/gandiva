@@ -2,7 +2,8 @@
 
 import type { Ref } from "react";
 import { motion } from "motion/react";
-import { LinkIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
+import { LinkIcon, ScaleIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CredibilityBadge } from "./credibility-badge";
 import { CategoryBadge } from "@/components/status-badge";
@@ -35,10 +36,14 @@ export function ServiceCard({
   service,
   index,
   ref,
+  onCompare,
+  comparing,
 }: {
   service: Service;
   index: number;
   ref?: Ref<HTMLDivElement>;
+  onCompare?: () => void;
+  comparing?: boolean;
 }) {
   const adversarial = ADVERSARIAL_IDS.has(service.id);
   const rep = service.reputation;
@@ -159,6 +164,12 @@ export function ServiceCard({
               <ShieldAlertIcon className="size-3" />
               deliberately hostile seller — the buyer should route around it
             </div>
+          ) : null}
+
+          {onCompare ? (
+            <Button variant={comparing ? "default" : "outline"} size="sm" className="mt-auto" onClick={onCompare}>
+              <ScaleIcon /> {comparing ? "Comparing" : `Compare with other ${service.category} sellers`}
+            </Button>
           ) : null}
         </CardContent>
       </Card>

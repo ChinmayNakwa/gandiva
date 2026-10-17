@@ -2,6 +2,7 @@ import useSWR from "swr";
 import { fetcher, servicesUrl, type ServiceQuery } from "./api";
 import type {
   AgentWalletInfo,
+  CompareResponse,
   Info,
   StakeOverview,
   LedgerResponse,
@@ -38,6 +39,12 @@ export function useRun(id?: string | null) {
   return useSWR<Run>(id ? `/buyer/runs/${id}` : null, fetcher, {
     refreshInterval: (run) => (run && run.state !== "running" ? 0 : 1200),
   });
+}
+
+/** Side-by-side comparison of the sellers competing in one category; null category = nothing selected. */
+export function useCompare(category: string | null, selected?: string | null) {
+  const q = category ? `/registry/compare?category=${category}${selected ? `&selected=${encodeURIComponent(selected)}` : ""}` : null;
+  return useSWR<CompareResponse>(q, fetcher, { refreshInterval: 10000, keepPreviousData: true });
 }
 
 export function useStake() {

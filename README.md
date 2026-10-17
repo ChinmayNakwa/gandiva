@@ -107,6 +107,18 @@ Each listing gets a score out of 100 from proofs a seller can give with code, ke
 
 Credibility breaks ties in ranking: after reputation and price, before latency. The built-in sellers' proofs are signed at boot with their keys from `.env`.
 
+### Seller comparison: why one seller is picked
+
+On the Marketplace, **Compare** on any card opens a dashboard of the sellers the buyer treats as substitutes for that job (same input and output schema). It shows:
+
+- the ranking ladder, with the rule that decided each step (402 check, reputation, price, credibility or latency);
+- a radar chart of every parameter (reputation, success rate, cheapness, speed, credibility, stake);
+- per-parameter bars across all candidates;
+- the last calls to each seller (latency and outcome);
+- the selected seller's credibility checks.
+
+The API is `GET /registry/compare?category=data&selected=fx-rates`. The explanation code follows `rankCompare` step by step, and a unit test keeps the two in sync.
+
 ## License
 
 ISC

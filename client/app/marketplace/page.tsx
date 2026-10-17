@@ -13,6 +13,8 @@ import {
 } from "@/components/market/market-filters";
 import { ServiceCard } from "@/components/market/service-card";
 import { ServiceSearch } from "@/components/market/service-search";
+import { CompareDashboard } from "@/components/market/compare-dashboard";
+import type { Category } from "@/lib/types";
 import { AgentWalletCard } from "@/components/agent/agent-wallet-card";
 import { PageIntro } from "@/components/page-intro";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,8 @@ function filterLabels(f: MarketFilters) {
 export default function MarketplacePage() {
   const [filters, setFilters] = useState<MarketFilters>(DEFAULT_FILTERS);
   const [searching, setSearching] = useState(false);
+  const [compare, setCompare] = useState<{ category: Category; id: string } | null>(null);
+  const compareRef = useRef<HTMLDivElement>(null);
   /** A search pick whose card is hidden by the filters; shown once they reset. */
   const pending = useRef<string | null>(null);
 
@@ -91,6 +95,17 @@ export default function MarketplacePage() {
     requestAnimationFrame(() => revealCard(el));
   }, [data]);
 
+  function openCompare(category: Category, id: string) {
+    setCompare({ category, id });
+    requestAnimationFrame(() => {
+      const el = compareRef.current;
+      if (!el) return;
+      const lenis = getLenis();
+      if (lenis) lenis.scrollTo(el, { offset: -96, duration: 0.8 });
+      else el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   function onPick(id: string) {
     const el = document.getElementById(`svc-${id}`);
     if (el) return revealCard(el);
@@ -105,7 +120,7 @@ export default function MarketplacePage() {
       <PageIntro
         eyebrow="registry"
         title="Marketplace"
-        description="Every listed service, with a reputation computed from the buyer's ledger. Prices are per call in USDC; the buyer ranks sellers by reputation, then price, then latency and fails over when a seller misbehaves."
+        description="Every listed service, with a reputation computed from the buyer's ledger and a credibility score from proofs that need no KYC. Prices are per call in USDC; the buyer ranks sellers by reputation, then price, then credibility, then latency, and fails over when a seller misbehaves. Press Compare on any card to see exactly why one seller is picked over another."
       >
         <div className="font-mono text-xs text-muted-foreground">
           API:{" "}
@@ -138,6 +153,17 @@ export default function MarketplacePage() {
         onPick={(s) => onPick(s.id)}
       />
 
+      {compare ? (
+        <div ref={compareRef} className="mt-6 scroll-mt-28">
+          <CompareDashboard
+            category={compare.category}
+            selected={compare.id}
+            onClose={() => setCompare(null)}
+            onSelect={(id) => setCompare({ ...compare, id })}
+          />
+        </div>
+      ) : null}
+
       <section className="mt-6">
         {error && !services.length ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-bad/30 bg-bad/5 px-6 py-14 text-center">
@@ -164,7 +190,13 @@ export default function MarketplacePage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout" initial={false}>
               {services.map((s, i) => (
-                <ServiceCard key={s.id} service={s} index={i} />
+                <ServiceCard
+                  key={s.id}
+                  service={s}
+                  index={i}
+                  comparing={compare?.id === s.id}
+                  onCompare={() => openCompare(s.category, s.id)}
+                />
               ))}
             </AnimatePresence>
           </div>
