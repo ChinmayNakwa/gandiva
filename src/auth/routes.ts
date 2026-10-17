@@ -2,7 +2,6 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { getAddress, isAddress, recoverMessageAddress } from "viem";
-import { config } from "../config.js";
 import { consumeNonce, createNonce, createSession, deleteSession, loginMessage, NONCE_TTL_MS, parseLoginMessage, SESSION_TTL_MS, sessionAddress } from "./session.js";
 
 export const auth = new Hono();
@@ -67,7 +66,8 @@ auth.post("/login", bodyLimit({ maxSize: 4096, onError: (c) => c.json({ error: "
   setCookie(c, SESSION_COOKIE, session.token, {
     httpOnly: true,
     sameSite: "Lax",
-    secure: config.publicBaseUrl.startsWith("https://"),
+    // Follow the address the browser is actually on: a Secure cookie is silently dropped on a plain-http LAN address.
+    secure: fields.uri.startsWith("https://"),
     path: "/",
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
   });

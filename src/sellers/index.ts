@@ -57,7 +57,7 @@ async function summariseHindi(input: { texts: string[] }) {
       const out = await chat(
         [
           { role: "system", content: "You are a precise translator and summariser. Reply only in Hindi written in Devanagari script." },
-          { role: "user", content: `Summarise this book description in Hindi in 1-2 short sentences. Output only the Hindi summary.\n\n${text}` },
+          { role: "user", content: `Summarise this text in Hindi in 1-2 short sentences. Output only the Hindi summary.\n\n${text}` },
         ],
         { timeoutMs: 40_000 },
       );
