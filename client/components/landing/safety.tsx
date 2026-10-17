@@ -51,7 +51,7 @@ export function Safety() {
           <span className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
             safety & rules
           </span>
-          <h2 className="font-heading text-2xl font-semibold sm:text-3xl">
+          <h2 className="font-display text-3xl sm:text-4xl">
             Pay per call, not on faith
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
