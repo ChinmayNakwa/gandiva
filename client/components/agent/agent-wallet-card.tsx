@@ -11,6 +11,7 @@ import { withdrawFromAgent } from "@/lib/api";
 import { toUnits } from "@/lib/format";
 import { useAgentWallet, useInfo } from "@/lib/hooks";
 import { fundAgentWallet, walletErrorMessage } from "@/lib/wallet";
+import { SpendCapBar } from "./spend-cap-bar";
 
 type Notice = { tone: "ok" | "bad" | "info"; text: string; href?: string | null };
 
@@ -38,9 +39,13 @@ export function AgentWalletCard() {
         </CardHeader>
         <CardContent className="flex flex-col items-start gap-3 text-sm text-muted-foreground">
           <p>
-            Sign in to give your buyer agent its own wallet. You put in a little test USDC, the agent spends only that, and you can take the rest back. Signed out, runs use the shared demo wallet
-            {info ? ` (limit ${info.spendCap.limitUsdc} USDC per ${info.spendCap.windowMinutes} min)` : ""}.
+            Sign in to give your buyer agent its own wallet. You put in a little test USDC, the agent spends only that, and you can take the rest back. Signed out, runs use the shared demo wallet.
           </p>
+          {info ? (
+            <div className="w-full max-w-md">
+              <SpendCapBar cap={info.spendCap} label="Shared demo wallet limit" />
+            </div>
+          ) : null}
           {!loading ? (
             <Button size="sm" onClick={signIn} disabled={busy}>
               {busy ? "Check your wallet…" : "Connect wallet"}
@@ -120,9 +125,9 @@ export function AgentWalletCard() {
                     {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                   </Button>
                 </div>
-                <span className="text-[11px] text-muted-foreground">
-                  Spend limit {agent.spendCap.limitUsdc} USDC per {agent.spendCap.windowMinutes} min ({agent.spendCap.remainingUsdc} left)
-                </span>
+                <div className="mt-1 max-w-md">
+                  <SpendCapBar cap={agent.spendCap} label="Spend limit" />
+                </div>
               </div>
               <div className="flex flex-col items-start sm:items-end">
                 <span className="text-xs text-muted-foreground">Balance</span>
