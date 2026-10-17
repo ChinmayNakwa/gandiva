@@ -98,6 +98,7 @@ export default function SellPage() {
                 <LlmAgentForm
                   // a fresh form whenever another listing or template is picked
                   key={`llm:${editing?.id ?? "new"}`}
+                  wallet={address}
                   editing={editing}
                   info={editing ? agents[editing.id] : undefined}
                   onCancel={() => setEditing(null)}
