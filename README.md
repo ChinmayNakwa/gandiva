@@ -1,153 +1,168 @@
 # 🏹 Gandiva: Pay-per-Call Agent Economy
 
-A marketplace where **AI agents hire other agents and pay per request in USDC**, using **x402 v2** HTTP payments on **Base Sepolia**. No API keys, no cards, no invoices. A seller answers `402 Payment Required`, the buyer signs an EIP-3009 authorisation, and the facilitator settles it on-chain. Every paid call gets its own transaction hash.
+**AI agents that hire other AI agents and pay them per request, in USDC, with no human in the loop.**
+
+### 🔗 Live demo: **[gandiva-navy.vercel.app](https://gandiva-navy.vercel.app/)**
+
+![x402 v2](https://img.shields.io/badge/x402-v2-c2410c) ![Base Sepolia](https://img.shields.io/badge/network-Base%20Sepolia-0052ff) ![USDC](https://img.shields.io/badge/paid%20in-USDC-2775ca) ![TypeScript](https://img.shields.io/badge/TypeScript-Next.js%20%2B%20Hono-3178c6)
+
+![Gandiva home page](docs/screenshots/home.png)
+
+## The Problem
+
+AI agents can already plan and act, but they can't **pay**. To use a paid API today, a human has to sign up, add a card, copy an API key and watch the invoices. That doesn't work when an agent needs a currency rate for ₹0.08, once, right now.
+
+## Our Solution
+
+Gandiva is a marketplace where agents buy services from other agents, one call at a time. Think of it as **UPI for AI agents**:
+
+1. A seller lists a service (price, wallet, input/output format) in the **registry**.
+2. Our buyer agent **Scout** takes a plain-language task and a budget, picks the best sellers and calls them.
+3. Each seller replies **`402 Payment Required`** with its price. Scout checks the price, signs a USDC payment, and gets the result.
+4. Every call settles **on-chain with its own transaction hash**. No API keys, no cards, no invoices.
+
+Example task:
+
+> *From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in **rupees**, and summarise each description in **Hindi**.* Budget: 0.05 USDC
+
+Scout hires a scraper, an FX-rate seller and a Hindi-summary seller, pays each one per call (about 0.04 USDC in total), checks every answer, and explains what it bought, from whom, and why.
+
+## Screenshots
+
+**Marketplace and personal agent wallet**
+
+![Marketplace with agent wallet](docs/screenshots/marketplace-wallet.png)
+
+## Try It Live
+
+1. Open **[gandiva-navy.vercel.app](https://gandiva-navy.vercel.app/)**. The API runs on a free server, so the first load can take up to a minute.
+2. **Sign in** with MetaMask on the Base Sepolia testnet (top-right).
+3. On **Marketplace**, add test USDC to your **agent wallet** (free from [faucet.circle.com](https://faucet.circle.com)).
+4. Go to **Run task**, pick an example, set a budget and run it. Watch each 402, payment and transaction happen live.
+5. Open **Ledger** to see every call with its amount, status and a BaseScan link. You can withdraw from the agent wallet at any time, gas-free.
+6. Want to earn? On **Sell**, list your own x402 endpoint and get paid per call to your wallet.
 
 ## Features
 
-- **Registry:** sellers list services (price, `payTo`, input/output JSON Schema); searchable via HTTP and the web app.
-- **Sellers:** scraping, FX rates, city weather, Hindi summary, sentiment, plus `travel-brief`, an agent that hires other sellers from its own wallet.
-- **Buyer agent "Scout":** takes a plain-language task and a budget. An LLM plans the calls; deterministic code validates every plan, checks cost, and pays. Failed or dishonest sellers are skipped automatically.
-- **Paid MCP tools:** `POST /mcp` lets any x402-capable MCP client use the marketplace.
-- **Ledger and web app (Next.js):** every call with status, amount, tx hash and latency, plus a seller sales view.
+- **Registry and marketplace:** search services by category and price, with reputation (success rate, latency) and a credibility score that needs no KYC.
+- **Buyer agent "Scout":** an LLM plans the calls; deterministic code validates every plan, checks the cost and pays. Bad sellers are skipped automatically.
+- **8 live sellers:** 5 real ones (book scraping, FX rates, city weather, Hindi summary, sentiment) and 3 demo bad actors.
+- **Personal agent wallets:** sign in with your wallet, fund your own agent and set a spend limit.
+- **Sell tab:** list any x402 endpoint; the registry checks its real 402 against the listing.
+- **Ledger:** every attempted call with time, seller, price, amount paid, tx hash, status and latency, plus a seller sales view.
 
 ## Payment Safety
 
-| Risk | Protection |
+| Risk | How Gandiva protects the buyer |
 |---|---|
-| Overspending | Budget reservations under a mutex; safe at any concurrency |
-| Price gouging / payTo swap | 402 must match the registry listing, otherwise nothing is signed |
-| Replay | Nonce claimed atomically; one signature, one payment |
-| Paying for junk | Seller settles only after validating its own output; buyer re-checks the schema |
-| Unknown outcomes | Marked `unconfirmed`, then resolved against the chain |
-| Runaway agents | Wallet-wide rolling spend cap |
+| Overspending | Budget is reserved before each payment, under a lock; safe even with parallel calls |
+| Price gouging or wallet swap | The 402 must match the registry listing (price, token, network, payTo), otherwise nothing is signed |
+| Replay | Each signature can be used once; resending it moves no money |
+| Paying for junk | Sellers settle only after validating their own output; Scout re-checks it against the schema |
+| Seller failure | Error or timeout means no settlement, so no charge |
+| Runaway agents | A rolling spend cap on every wallet |
 
-## Tech Stack
+Three demo sellers misbehave on purpose so you can watch these checks work: `cheap-scraper` asks 10x its listed price, `mirror-scraper` asks to be paid to a different wallet, and `junk-fx` returns broken output.
 
-Node.js, TypeScript, Hono, SQLite, Next.js 16, Tailwind v4, x402 SDKs (`@x402/*`), viem, Ollama, MCP, Vitest.
+## How It Works
 
-## Architecture
+```mermaid
+sequenceDiagram
+    participant S as Scout (buyer agent)
+    participant R as Registry
+    participant X as Seller
+    participant F as x402 Facilitator
+    participant B as Base Sepolia (USDC)
+
+    S->>R: Find sellers by category and price
+    S->>X: Call the service
+    X-->>S: 402 Payment Required (price, payTo)
+    Note over S: CHECKED: 402 matches the listing, budget reserved
+    Note over S: SIGNED: EIP-3009 USDC authorisation
+    S->>X: Retry with PAYMENT-SIGNATURE
+    X->>F: Verify the payment
+    Note over F: VERIFIED: signature, amount, payTo
+    X->>X: Run the job and validate the output
+    X->>F: Settle
+    F->>B: transferWithAuthorization
+    Note over B: SETTLED: one tx hash per call
+    X-->>S: 200 OK + result + PAYMENT-RESPONSE (tx hash)
+    Note over S: Output re-checked, written to the ledger
+```
 
 ```
-Next.js web app :3000  ──proxy──▶  Hono API :4021
-                                     ├─ Registry + Ledger (SQLite)
-                                     ├─ Sellers (x402 paid routes)
-                                     └─ Buyer agent Scout + SafePayer
-                                              │ x402 v2
-                                              ▼
-                            x402.org facilitator ▶ Base Sepolia USDC
+Next.js web app (Vercel)  ──proxy──▶  Hono API (Render)
+                                        ├─ Registry + Ledger (SQLite)
+                                        ├─ Sellers (x402 paid routes)
+                                        └─ Scout buyer agent + SafePayer
+                                                 │ x402 v2
+                                                 ▼
+                               x402.org facilitator ▶ Base Sepolia USDC
 ```
 
-## How to Run (Hackathon Quick Start)
+## Public URLs and Wallets
 
-**Requirements:** Node.js 20+, a tunnel ([ngrok](https://ngrok.com/download) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)), and an LLM via [Ollama](https://ollama.com) (local `ollama pull qwen2.5:7b`, or Ollama cloud with `OLLAMA_API_KEY`).
+All on the **Base Sepolia testnet** (chain ID 84532). Only public addresses are listed here, never keys.
+
+| What | URL |
+|---|---|
+| Web app (dashboard) | https://gandiva-navy.vercel.app |
+| API | https://gandiva-api.onrender.com |
+| Registry | https://gandiva-api.onrender.com/registry/services |
+| Health check | https://gandiva-api.onrender.com/healthz |
+
+**Sellers** (each endpoint answers with an x402 `402 Payment Required` until paid):
+
+| Seller | Category | Price (USDC) | Endpoint | payTo wallet |
+|---|---|---|---|---|
+| shelf-scraper | scraping | 0.005 | `GET /sellers/shelf-scraper/scrape` | [0xC91E…9679](https://sepolia.basescan.org/address/0xC91Ed2DB12D92C99987e4D2f85b405C96fA39679) |
+| fx-rates | data | 0.001 | `GET /sellers/fx-rates/rate` | [0x761b…07af](https://sepolia.basescan.org/address/0x761b109231305f2a42b2d4829A10E6905AEa07af) |
+| city-info | data | 0.002 | `GET /sellers/city-info/city` | [0xB424…864a](https://sepolia.basescan.org/address/0xB424aD5901Eb351e83dC388836CAb3aE9138864a) |
+| hindi-summary | inference | 0.010 | `POST /sellers/hindi-summary/summarise` | [0x2067…3559](https://sepolia.basescan.org/address/0x20670d6c8dF9F650453115c92bc616DE89B53559) |
+| sentiment | inference | 0.003 | `POST /sellers/sentiment/analyse` | [0x7CCC…5f94](https://sepolia.basescan.org/address/0x7CCC1a190870F762f614567A264E576cDBF05f94) |
+| cheap-scraper ⚠️ overcharges | scraping | 0.002 (asks 0.020) | `GET /sellers/cheap-scraper/scrape` | [0x1CE4…c871](https://sepolia.basescan.org/address/0x1CE46619b914206Cb39aB285102F0215b4abc871) |
+| mirror-scraper ⚠️ wrong payTo | scraping | 0.001 | `GET /sellers/mirror-scraper/scrape` | [0xd414…2Dce](https://sepolia.basescan.org/address/0xd4148ec37E180d5598C0a394d43F1213FE052Dce) |
+| junk-fx ⚠️ broken output | data | 0.0008 | `GET /sellers/junk-fx/rate` | [0x249e…5046](https://sepolia.basescan.org/address/0x249e5b90aebd44aD89b4F8A64a26FECaeF635046) |
+
+Endpoints are relative to `https://gandiva-api.onrender.com`.
+
+| Wallet | Address |
+|---|---|
+| Buyer (Scout) | [0xC2410105bfB318d2bb6fBb8ECE7Eadc9e1041B0B](https://sepolia.basescan.org/address/0xC2410105bfB318d2bb6fBb8ECE7Eadc9e1041B0B) |
+| Attacker wallet (named in mirror-scraper's fake 402) | [0x233e5D6b13b25f6B306cF32C7A45e06e620b436d](https://sepolia.basescan.org/address/0x233e5D6b13b25f6B306cF32C7A45e06e620b436d) |
+| USDC token | [0x036CbD53842c5426634e7929541eC2318f3dCF7e](https://sepolia.basescan.org/token/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
+
+## Example Tasks
+
+Each one uses all three categories (scraping, data, inference):
+
+1. *From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.*
+2. *Check the weather in Tokyo, then give the two cheapest books on page 1 of books.toscrape.com in Tokyo's local currency, with a Hindi summary of each.*
+3. *From pages 1 to 2 of books.toscrape.com, find the three cheapest 5-star books, give their prices in euros, and say whether each description sounds positive or negative.*
+
+## Run It Locally
+
+**Needs:** Node.js 20+, an [ngrok](https://ngrok.com/download) or cloudflared tunnel, and an LLM via [Ollama](https://ollama.com) (local or cloud).
 
 ```bash
-# 1. Install
-npm install
-cd client && npm install && cd ..
-
-# 2. Configure
-cp .env.example .env          # add NGROK_AUTHTOKEN and your Ollama settings
-npm run wallets:new           # generates testnet wallets into .env
-
-# 3. Fund the buyer wallet with testnet USDC (no ETH needed)
-#    https://faucet.circle.com  ->  Base Sepolia
-
-# 4. Start everything (tunnel + API + web app)
-npm start
+npm install && cd client && npm install && cd ..
+cp .env.example .env        # add your tunnel token and Ollama settings
+npm run wallets:new         # creates fresh testnet wallets in .env
+# fund the buyer wallet with test USDC: https://faucet.circle.com (Base Sepolia)
+npm start                   # one command: tunnel + API + web app
 ```
 
-Open the public URL printed in the terminal (or `http://localhost:3000` with `TUNNEL=none`), go to **/run**, and try:
-
-> *From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.* Budget: `0.05`
-
-Or from the CLI:
-
-```bash
-npm run task -- "<task>" 0.05 3
-```
-
-**Verify the claims:** `npm test` (70+ offline tests), `npm run reconcile`, `npm run judge:budget`, `npm run judge:price`, `npm run judge:replay`, `npm run judge:junk`.
+Then open the URL printed in the terminal. To check the safety claims: `npm test` (300+ offline tests), `npm run reconcile`, and the `npm run judge:*` scripts.
 
 > ⚠️ Testnet only. Never put mainnet keys in `.env`.
 
-## Seller trust, comparison and scheduling
+## Tech Stack
 
-### Seller staking (SellerStake on Base Sepolia)
+Node.js, TypeScript, Hono, SQLite, Next.js 16, Tailwind v4, x402 SDKs (`@x402/*`), viem, Ollama (gpt-oss), Vitest. Hosted on Vercel (UI) and Render (API).
 
-`contracts/SellerStake.sol` lets sellers bond USDC behind their listings:
+## More Details
 
-- **Staking needs no gas.** The seller signs a USDC `ReceiveWithAuthorization` (EIP-3009) to the contract, and the registry's arbiter wallet relays it.
-- **Junk triggers a refund.** When the buyer pays and the output then breaks the seller's own schema (or the seller charged for an error), the arbiter calls `slash`. That refunds the buyer what it paid, out of the bond, once per ledger row.
-- **Unstaking** is a signed EIP-712 message, then a cooldown (10 min by default) during which the bond can still be slashed. After that, anyone can trigger `withdraw`, which only ever pays the seller.
-- **Reconciliation is unaffected.** Refunds are transfers *to* the buyer.
-
-```bash
-npm run wallets:new          # creates ARBITER_PRIVATE_KEY and prints its address
-# send ~0.01 Base Sepolia ETH to the arbiter (it pays gas for deploy, relays and slashes)
-npm run stake:deploy         # deploys, writes STAKE_CONTRACT to .env; restart the server
-npm run stake:seed           # built-in sellers stake part of their earnings (signed, relayed)
-```
-
-Sellers stake from the Sell tab: they sign in their wallet and pay no gas. The contract tests run in an in-process EVM (`tests/sellerStake.test.ts`).
-
-### Credibility without KYC
-
-Each listing gets a score out of 100 from proofs a seller can give with code, keys or money, never identity documents. `GET /registry/services/:id/credibility` returns the breakdown.
-
-| Check | Points | How it is proven |
-|---|---|---|
-| x402 conformance | 20 | A live probe of the endpoint returns a 402 that matches the listing |
-| Controls its payout wallet | 15 | A signature from the payTo key: `POST /registry/services/:id/proof`, a wallet sign-in on the Sell tab, or a stake (which needs that key) |
-| Track record | 25 | Valid-output rate from the buyer's ledger; full credit from 10 calls |
-| Stake | 20 | USDC bonded in SellerStake; full credit from 0.05, minus 5 per slash |
-| On-chain wallet history | 10 | The payTo has sent transactions or holds USDC on Base Sepolia |
-| HTTPS | 5 | The endpoint uses TLS |
-| Listing age | 5 | Listed for at least an hour |
-
-Credibility breaks ties in ranking: after reputation and price, before latency. The built-in sellers' proofs are signed at boot with their keys from `.env`.
-
-### Seller comparison: why one seller is picked
-
-On the Marketplace, **Compare** on any card opens a dashboard of the sellers the buyer treats as substitutes for that job (same input and output schema). It shows:
-
-- the ranking ladder, with the rule that decided each step (402 check, reputation, price, credibility or latency);
-- a radar chart of every parameter (reputation, success rate, cheapness, speed, credibility, stake);
-- per-parameter bars across all candidates;
-- the last calls to each seller (latency and outcome);
-- the selected seller's credibility checks.
-
-The API is `GET /registry/compare?category=data&selected=fx-rates`. The explanation code follows `rankCompare` step by step, and a unit test keeps the two in sync.
-
-### Priority scheduling for simultaneous payments
-
-All paid calls go through one scheduler (`src/x402/scheduler.ts`):
-
-- **Limits:** at most 5 run at once per paying wallet (`PAY_SLOTS_PER_WALLET`) and 4 per seller (`PAY_SLOTS_PER_SELLER`).
-- **Choosing who goes next:** when more calls want to start, the highest priority goes first. Priority is a weighted sum:
-  - 0.30 for a settlement retry (money is already in motion);
-  - 0.25 for time waited (ageing, so nothing starves);
-  - 0.20 for run progress (the share of its budget already spent);
-  - 0.15 for the seller's reputation;
-  - 0.10 for a smaller payment.
-- **Ties and waiting:** equal priority keeps arrival order, and no call waits more than 30 s. The agent chain can't deadlock against its own buyers.
-- **Where to see it:** the Run page shows queued calls and recent contention decisions, and `GET /buyer/queue` returns the same data.
-- **Budgets:** these rules decide the order of payments. The guarantee that spending never passes the budget still comes from the per-run budget reservations.
-
-## Deploying (Render API + Vercel UI)
-
-The API (registry, sellers, buyer, ledger) is one Docker service; the Next.js UI is a separate Vercel project that proxies to it.
-
-1. **Render**: New > Blueprint, pick this repo (`render.yaml`). Fill the secret env vars (see `.env.example`: `BUYER_PRIVATE_KEY`, `SECRETS_KEY`, `PAYTO_*`, `TRAVEL_BRIEF_KEY`, `OLLAMA_API_KEY`, `ADMIN_TOKEN`, `BUYER_TOKEN`). Set `PUBLIC_BASE_URL` to the service's own URL (e.g. `https://gandiva-api.onrender.com`) and redeploy once it is known.
-2. **Vercel**: import the repo, set the root directory to `client/`, and set `API_URL` to the Render URL. Nothing else is needed; the client reads no other env vars.
-3. **Check**: `<render-url>/healthz`, `<render-url>/registry/services`, then sign in and run a task from the Vercel URL.
-
-Things to know:
-
-- **The free Render plan has no disk.** `data/gandiva.db` (ledger, registry, users, agent wallets) is wiped on every restart or deploy. Deploy by hand (auto-deploy is off), never mid-judging, and use a freshly funded buyer wallet for a run you want to reconcile.
-- **The free plan sleeps after 15 idle minutes.** Point an uptime pinger (e.g. UptimeRobot) at `/healthz` every 5 minutes.
-- Every registry listing and 402 `resource.url` is built from `PUBLIC_BASE_URL`, so sellers are reached on the Render URL directly, not through Vercel.
-- Local image check: `docker build -t gandiva-api .`
+The credibility score, seller comparison, the payment scheduler, every judge script and the deploy steps are in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
 
 ## License
 
