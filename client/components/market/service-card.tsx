@@ -53,7 +53,7 @@ export function ServiceCard({
       exit={{ opacity: 0, scale: 0.96, transition: transition.base }}
       transition={{ ...transition.base, delay: Math.min(index * 0.04, 0.32), layout: spring.soft }}
       whileHover={{ y: -4, transition: spring.soft }}
-      className="group relative h-full min-w-0 scroll-mt-40 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+      className="group relative h-full min-w-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
     >
       <EdgeDraw tone={adversarial ? "bg-bad/70" : "bg-primary"} />
       {/* Search lands here: the page restarts a brief wash on this layer. */}

@@ -27,7 +27,7 @@ export function LiveFeed() {
   const newest = live[0];
 
   return (
-    <section id="live" className="mx-auto w-full max-w-6xl scroll-mt-28 px-4 py-16">
+    <section id="live" className="mx-auto w-full max-w-6xl px-4 py-16">
       <Reveal>
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-2">

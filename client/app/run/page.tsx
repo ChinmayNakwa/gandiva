@@ -26,7 +26,7 @@ import { getLenis } from "@/lib/scroll";
 function reveal(el: HTMLElement | null) {
   if (!el) return;
   const lenis = getLenis();
-  // Both paths honour the marker's scroll-margin (clears the sticky header).
+  // Both paths honour the page's scroll-padding (clears the sticky header).
   // Lenis caches the page height; the page just grew, so re-measure first or
   // the scroll is clamped to the old (unscrollable) length.
   if (lenis) {
@@ -112,7 +112,7 @@ export default function RunPage() {
         </CardContent>
       </Card>
 
-      <div ref={liveRef} className="scroll-mt-28" />
+      <div ref={liveRef} />
 
       {starting && !run ? (
         <div className="mt-6 animate-pulse rounded-2xl border border-border bg-card p-6">

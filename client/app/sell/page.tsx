@@ -75,7 +75,7 @@ export default function SellPage() {
                   onClick={() => pick(t.id)}
                   aria-pressed={active}
                   className={
-                    "flex items-start gap-3 rounded-xl border p-4 text-left transition-colors " +
+                    "flex items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none " +
                     (active ? "border-primary/60 bg-primary/10" : "border-border/70 hover:border-primary/40 hover:bg-muted/40")
                   }
                 >

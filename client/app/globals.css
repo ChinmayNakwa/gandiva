@@ -156,6 +156,8 @@
     @apply font-sans antialiased;
   }
   body {
+    /* Keep anything scrolled to (focus, anchors, Lenis) clear of the sticky header. */
+    scroll-padding-top: 7rem;
     @apply bg-background text-foreground;
   }
   /* Big headlines are the editorial serif; small headings stay in the sans. */

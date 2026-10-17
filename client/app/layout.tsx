@@ -54,9 +54,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <MotionProvider>
             <SmoothScroll />
             <AuthProvider>
+              <a
+                href="#main"
+                className="sr-only rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                Skip to content
+              </a>
               <div className="flex min-h-dvh flex-col">
                 <SiteHeader />
-                <main className="flex-1">{children}</main>
+                <main id="main" tabIndex={-1} className="flex-1 outline-none">
+                  {children}
+                </main>
                 <SiteFooter />
               </div>
               <Toaster />

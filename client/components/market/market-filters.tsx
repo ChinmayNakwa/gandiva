@@ -63,7 +63,7 @@ export function MarketFiltersBar({
         <div
           role="group"
           aria-label="Category"
-          className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 scrollbar-none"
+          className="-m-1 flex max-w-full gap-1 overflow-x-auto p-1 scrollbar-none"
         >
           {CATEGORIES.map((c) => {
             const active = value.category === c.value;
@@ -74,7 +74,7 @@ export function MarketFiltersBar({
                 aria-pressed={active}
                 onClick={() => set({ category: c.value })}
                 className={cn(
-                  "relative isolate shrink-0 rounded-full px-3.5 py-1.5 font-mono text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  "relative isolate shrink-0 rounded-full px-3.5 py-1.5 font-mono text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none",
                   active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
