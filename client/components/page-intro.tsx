@@ -18,7 +18,7 @@ export function PageIntro({
           {eyebrow}
         </span>
       ) : null}
-      <h1 className="text-2xl font-medium sm:text-3xl">{title}</h1>
+      <h1 className="text-4xl leading-tight sm:text-5xl">{title}</h1>
       {description ? (
         <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
       ) : null}

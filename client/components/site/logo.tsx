@@ -25,7 +25,7 @@ export function LogoLockup({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <LogoMark className="size-5 text-primary" />
-      <span className="font-heading text-base font-semibold tracking-tight">
+      <span className="font-display text-xl leading-none tracking-tight">
         Gandiva
       </span>
     </span>
