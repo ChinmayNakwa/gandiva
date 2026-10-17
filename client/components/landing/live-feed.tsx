@@ -1,26 +1,40 @@
 "use client";
 
+import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ActivityIcon } from "lucide-react";
+import { ActivityIcon, PauseIcon } from "lucide-react";
+import { cn } from "cn";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { useLedger } from "@/lib/hooks";
-import { clock, usdc } from "@/lib/format";
+import { clock, statusLabel, usdc } from "@/lib/format";
+import { transition } from "@/lib/motion";
+import { useFreshIds } from "@/lib/use-fresh";
+import type { LedgerEntry } from "@/lib/types";
 import { Reveal } from "./reveal";
 
 export function LiveFeed() {
   const { data } = useLedger();
-  const entries = (data?.entries ?? []).slice(0, 6);
+  const live = (data?.entries ?? []).slice(0, 6);
+  // Hovering freezes the list so a row can be read without it moving away;
+  // new arrivals wait as a count until the pointer leaves.
+  const [frozen, setFrozen] = useState<LedgerEntry[] | null>(null);
+  const entries = frozen ?? live;
+  const waiting = frozen ? live.filter((e) => e.id > (frozen[0]?.id ?? 0)).length : 0;
+  const isFresh = useFreshIds(data?.entries.map((e) => e.id));
+  const pause = () => setFrozen((f) => f ?? live);
+  const resume = () => setFrozen(null);
+  const newest = live[0];
 
   return (
-    <section className="mx-auto w-full max-w-6xl px-4 py-16">
+    <section id="live" className="mx-auto w-full max-w-6xl scroll-mt-28 px-4 py-16">
       <Reveal>
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-2">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
               live ledger
             </span>
-            <h2 className="font-heading text-2xl font-semibold sm:text-3xl">
+            <h2 className="font-display text-3xl sm:text-4xl">
               Payments, as they happen
             </h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
@@ -44,10 +58,23 @@ export function LiveFeed() {
             <div className="mb-3 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
               <ActivityIcon className="size-3.5 text-primary" />
               /registry/ledger
+              {frozen ? (
+                <span className="ml-auto inline-flex items-center gap-1 text-foreground">
+                  <PauseIcon className="size-3" />
+                  paused{waiting ? ` · ${waiting} new` : ""}
+                </span>
+              ) : null}
             </div>
+            <p className="sr-only" aria-live="polite">
+              {newest ? `Latest payment: ${newest.service_name}, ${statusLabel(newest.status)}, ${usdc(newest.paid)} USDC` : ""}
+            </p>
 
             {entries.length ? (
-              <ul className="flex flex-col divide-y divide-border">
+              <ul
+                className="flex flex-col divide-y divide-border"
+                onPointerEnter={pause}
+                onPointerLeave={resume}
+              >
                 <AnimatePresence initial={false}>
                   {entries.map((e) => (
                     <motion.li
@@ -56,8 +83,11 @@ export function LiveFeed() {
                       initial={{ opacity: 0, y: -8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 py-2.5 font-mono text-xs sm:gap-4"
+                      transition={transition.base}
+                      className={cn(
+                        "grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 py-2.5 font-mono text-xs sm:gap-4",
+                        isFresh(e.id) && "animate-flash-in",
+                      )}
                     >
                       <span className="text-muted-foreground">
                         {clock(e.ts)}

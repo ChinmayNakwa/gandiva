@@ -38,6 +38,16 @@ export function clock(ts?: string | null): string {
   return ts.slice(5, 19).replace("T", " ");
 }
 
+/** ISO timestamp -> "12s ago", "4m ago", "3h ago", "2d ago". */
+export function ago(ts: string | null | undefined, now: number): string {
+  if (!ts) return "";
+  const s = Math.max(0, Math.round((now - Date.parse(ts)) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export function stars(n: number): string {
   return "★".repeat(Math.max(0, Math.min(5, n)));
 }
