@@ -3,13 +3,24 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Room and permission for pinned scroll scenes (landing/x402-flow.tsx). Keep in
+   step with SCENE_QUERY there; below it, scenes fall back to stacked cards. */
+@custom-variant scene {
+  @media (min-width: 48rem) and (min-height: 37.5rem) and (prefers-reduced-motion: no-preference) {
+    @slot;
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-jetbrains);
+  --font-sans: var(--font-inter-tight);
   --font-mono: var(--font-jetbrains);
-  --font-heading: var(--font-grotesk);
+  --font-heading: var(--font-inter-tight);
+  --font-display: var(--font-instrument-serif);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1); /* same curve as lib/motion.ts ease.out */
+  --color-gold: var(--gold);
+  --color-paper: var(--paper);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -52,83 +63,89 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Light theme */
+/* Light theme (default): warm paper, ink text, vermilion accent, amber/gold second accent.
+   Vermilion leans orange (hue ~40) and "bad" leans crimson (hue ~20) so the brand colour
+   never reads as an error; status chips always carry a text label as well. */
 :root {
-  --background: oklch(0.995 0.002 200);
-  --foreground: oklch(0.20 0.015 220);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.20 0.015 220);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.20 0.015 220);
-  --primary: oklch(0.60 0.13 162);
-  --primary-foreground: oklch(0.99 0.01 165);
-  --secondary: oklch(0.96 0.005 200);
-  --secondary-foreground: oklch(0.22 0.015 220);
-  --muted: oklch(0.965 0.005 200);
-  --muted-foreground: oklch(0.48 0.012 220);
-  --accent: oklch(0.95 0.02 165);
-  --accent-foreground: oklch(0.30 0.05 165);
-  --destructive: oklch(0.58 0.24 27);
-  --ok: oklch(0.60 0.13 162);
-  --warn: oklch(0.68 0.15 75);
-  --bad: oklch(0.58 0.22 25);
-  --info: oklch(0.60 0.13 240);
-  --border: oklch(0.20 0.015 220 / 12%);
-  --input: oklch(0.20 0.015 220 / 16%);
-  --ring: oklch(0.60 0.13 162 / 45%);
-  --chart-1: oklch(0.60 0.13 162);
-  --chart-2: oklch(0.62 0.12 200);
-  --chart-3: oklch(0.66 0.14 130);
-  --chart-4: oklch(0.70 0.15 85);
-  --chart-5: oklch(0.62 0.18 25);
+  --background: oklch(0.972 0.013 85);
+  --foreground: oklch(0.22 0.018 55);
+  --paper: oklch(0.955 0.018 82);
+  --card: oklch(0.988 0.008 85);
+  --card-foreground: oklch(0.22 0.018 55);
+  --popover: oklch(0.988 0.008 85);
+  --popover-foreground: oklch(0.22 0.018 55);
+  --primary: oklch(0.585 0.185 40);
+  --primary-foreground: oklch(0.985 0.01 85);
+  --secondary: oklch(0.935 0.017 80);
+  --secondary-foreground: oklch(0.24 0.018 55);
+  --muted: oklch(0.94 0.015 80);
+  --muted-foreground: oklch(0.47 0.022 60);
+  --accent: oklch(0.925 0.04 75);
+  --accent-foreground: oklch(0.34 0.07 50);
+  --gold: oklch(0.70 0.14 75);
+  --destructive: oklch(0.52 0.20 20);
+  --ok: oklch(0.52 0.11 155);
+  --warn: oklch(0.64 0.15 70);
+  --bad: oklch(0.52 0.20 20);
+  --info: oklch(0.52 0.10 245);
+  --border: oklch(0.22 0.018 55 / 13%);
+  --input: oklch(0.22 0.018 55 / 18%);
+  --ring: oklch(0.585 0.185 40 / 45%);
+  --chart-1: oklch(0.585 0.185 40);
+  --chart-2: oklch(0.70 0.14 75);
+  --chart-3: oklch(0.55 0.08 190);
+  --chart-4: oklch(0.58 0.10 130);
+  --chart-5: oklch(0.48 0.10 330);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.003 200);
-  --sidebar-foreground: oklch(0.20 0.015 220);
-  --sidebar-primary: oklch(0.60 0.13 162);
-  --sidebar-primary-foreground: oklch(0.99 0.01 165);
-  --sidebar-accent: oklch(0.95 0.02 165);
-  --sidebar-accent-foreground: oklch(0.30 0.05 165);
-  --sidebar-border: oklch(0.20 0.015 220 / 12%);
-  --sidebar-ring: oklch(0.60 0.13 162 / 45%);
+  --sidebar: oklch(0.96 0.015 82);
+  --sidebar-foreground: oklch(0.22 0.018 55);
+  --sidebar-primary: oklch(0.585 0.185 40);
+  --sidebar-primary-foreground: oklch(0.985 0.01 85);
+  --sidebar-accent: oklch(0.925 0.04 75);
+  --sidebar-accent-foreground: oklch(0.34 0.07 50);
+  --sidebar-border: oklch(0.22 0.018 55 / 13%);
+  --sidebar-ring: oklch(0.585 0.185 40 / 45%);
 }
 
-/* Dark theme (default) */
+/* Dark theme: warm charcoal, not blue-black, so the toggle stays on brand. */
 .dark {
-  --background: oklch(0.165 0.010 205);
-  --foreground: oklch(0.96 0.005 200);
-  --card: oklch(0.205 0.012 205);
-  --card-foreground: oklch(0.96 0.005 200);
-  --popover: oklch(0.195 0.012 205);
-  --popover-foreground: oklch(0.96 0.005 200);
-  --primary: oklch(0.78 0.15 165);
-  --primary-foreground: oklch(0.18 0.03 165);
-  --secondary: oklch(0.26 0.012 205);
-  --secondary-foreground: oklch(0.96 0.005 200);
-  --muted: oklch(0.24 0.010 205);
-  --muted-foreground: oklch(0.70 0.010 205);
-  --accent: oklch(0.27 0.025 165);
-  --accent-foreground: oklch(0.96 0.01 165);
-  --destructive: oklch(0.70 0.19 22);
-  --ok: oklch(0.78 0.15 165);
-  --warn: oklch(0.80 0.14 80);
-  --bad: oklch(0.70 0.19 22);
-  --info: oklch(0.72 0.13 240);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.78 0.15 165 / 55%);
-  --chart-1: oklch(0.78 0.15 165);
-  --chart-2: oklch(0.72 0.13 200);
-  --chart-3: oklch(0.78 0.14 130);
-  --chart-4: oklch(0.80 0.14 80);
-  --chart-5: oklch(0.70 0.18 25);
-  --sidebar: oklch(0.19 0.012 205);
-  --sidebar-foreground: oklch(0.96 0.005 200);
-  --sidebar-primary: oklch(0.78 0.15 165);
-  --sidebar-primary-foreground: oklch(0.18 0.03 165);
-  --sidebar-accent: oklch(0.27 0.025 165);
-  --sidebar-accent-foreground: oklch(0.96 0.01 165);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.78 0.15 165 / 55%);
+  --background: oklch(0.17 0.008 60);
+  --foreground: oklch(0.94 0.014 85);
+  --paper: oklch(0.195 0.01 60);
+  --card: oklch(0.205 0.009 60);
+  --card-foreground: oklch(0.94 0.014 85);
+  --popover: oklch(0.20 0.009 60);
+  --popover-foreground: oklch(0.94 0.014 85);
+  --primary: oklch(0.72 0.165 45);
+  --primary-foreground: oklch(0.18 0.02 50);
+  --secondary: oklch(0.25 0.01 60);
+  --secondary-foreground: oklch(0.94 0.014 85);
+  --muted: oklch(0.24 0.01 60);
+  --muted-foreground: oklch(0.71 0.018 75);
+  --accent: oklch(0.28 0.03 60);
+  --accent-foreground: oklch(0.94 0.02 80);
+  --gold: oklch(0.80 0.13 80);
+  --destructive: oklch(0.68 0.19 22);
+  --ok: oklch(0.74 0.13 155);
+  --warn: oklch(0.80 0.14 78);
+  --bad: oklch(0.68 0.19 22);
+  --info: oklch(0.72 0.10 245);
+  --border: oklch(0.94 0.014 85 / 11%);
+  --input: oklch(0.94 0.014 85 / 15%);
+  --ring: oklch(0.72 0.165 45 / 55%);
+  --chart-1: oklch(0.72 0.165 45);
+  --chart-2: oklch(0.80 0.13 80);
+  --chart-3: oklch(0.70 0.08 190);
+  --chart-4: oklch(0.72 0.10 130);
+  --chart-5: oklch(0.66 0.10 330);
+  --sidebar: oklch(0.19 0.009 60);
+  --sidebar-foreground: oklch(0.94 0.014 85);
+  --sidebar-primary: oklch(0.72 0.165 45);
+  --sidebar-primary-foreground: oklch(0.18 0.02 50);
+  --sidebar-accent: oklch(0.28 0.03 60);
+  --sidebar-accent-foreground: oklch(0.94 0.02 80);
+  --sidebar-border: oklch(0.94 0.014 85 / 11%);
+  --sidebar-ring: oklch(0.72 0.165 45 / 55%);
 }
 
 @layer base {
@@ -141,11 +158,24 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Big headlines are the editorial serif; small headings stay in the sans. */
   h1,
-  h2,
+  h2 {
+    @apply font-display font-normal tracking-tight;
+  }
   h3,
   h4 {
     @apply font-heading tracking-tight;
+  }
+  /* Instrument Serif ships one weight; never let the browser fake a bold. */
+  .font-display,
+  h1,
+  h2 {
+    font-synthesis-weight: none;
+  }
+  /* Amounts and counters line up and don't jitter as digits change. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
   }
   ::selection {
     background: var(--primary);
@@ -161,9 +191,82 @@
   }
 }
 
+/* Safety net for reduced motion: CSS animations and transitions finish instantly.
+   motion (MotionProvider) and GSAP (useGsap) handle their own animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hero headline (components/landing/hero-title.tsx). It starts hidden so the
+   line reveal doesn't flash; GSAP clears data-split-pending once split, and the
+   failsafe shows it anyway if scripts never run. */
+[data-split-pending] {
+  visibility: hidden;
+  animation: split-failsafe 0s linear 2.5s forwards;
+}
+@keyframes split-failsafe {
+  to {
+    visibility: visible;
+  }
+}
+/* SplitText clips each line in a .line-mask; pad it so serif descenders and
+   italic overhangs aren't cut, without changing the line spacing. */
+[data-hero-title] .line-mask {
+  padding: 0.06em 0.1em 0.18em 0;
+  margin: -0.06em -0.1em -0.18em 0;
+}
+
+/* A new receipt row slides in with a brief vermilion wash (components/run/receipt-table.tsx). */
+@keyframes receipt-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+  }
+  30% {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@utility animate-receipt-in {
+  animation: receipt-in 2.2s var(--ease-out-quint) both;
+}
+
+/* Theme switch: the new theme is revealed as a circle growing from the toggle
+   (see components/theme-toggle.tsx). Without View Transitions it just swaps. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 @utility grid-backdrop {
   background-image:
     linear-gradient(to right, var(--border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--border) 1px, transparent 1px);
   background-size: 44px 44px;
+}
+
+/* A row that just arrived gets a brief vermilion wash. Background only, so it
+   can sit on elements that motion is already moving. */
+@keyframes flash-in {
+  from {
+    background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@utility animate-flash-in {
+  animation: flash-in 2.2s var(--ease-out-quint) both;
 }
