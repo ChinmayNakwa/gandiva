@@ -12,16 +12,20 @@ const BOW_STRING_X = 18; // string x inside the SVG box (viewBox starts at -12)
 const DRAW_PX = 14;
 const CONTENT_MAX = 1152; // max-w-6xl
 const MIN_GUTTER_FOR_BOW = 80;
+const ARROW_DELAY = 0.55; // s after the line reveal starts
+const LINE = "block animate-line-rise motion-reduce:animate-none";
 
 /**
- * The hero headline. Lines rise out of a mask, then a bow in the left gutter
- * looses an arrow that flies across the page and lands as the underline
- * beneath "per call". Reduced motion: everything shows in its end state.
+ * The hero headline. Lines rise out of a mask (CSS, from the first paint: this
+ * is the page's largest paint, so it must not wait for scripts), then a bow in
+ * the left gutter looses an arrow (GSAP) that flies across the page and lands
+ * as the underline beneath "per call". Reduced motion: everything shows in its
+ * end state.
  */
 export function HeroTitle() {
   const root = useRef<HTMLDivElement>(null);
 
-  useGsap(root, ({ gsap, SplitText, reduced }) => {
+  useGsap(root, ({ gsap, reduced }) => {
     const box = root.current!;
     const h1 = box.querySelector<HTMLElement>("h1")!;
     const overlay = box.querySelector<HTMLElement>("[data-arrow]")!;
@@ -34,10 +38,9 @@ export function HeroTitle() {
 
     // Pin the overlay under "per call". Re-run whenever the text re-flows.
     // Layout offsets, not getBoundingClientRect, so the measurement ignores the
-    // lines' rise-in transform. SplitText can leave an empty <em> clone next to
-    // the real one, so pick the one with text.
+    // lines' rise-in transform.
     function place() {
-      const em = Array.from(h1.querySelectorAll("em")).find((e) => e.textContent?.trim());
+      const em = h1.querySelector<HTMLElement>("em");
       if (!em) return;
       let x = 0;
       let y = 0;
@@ -62,26 +65,7 @@ export function HeroTitle() {
       bow.style.display = hasBow ? "" : "none";
     }
 
-    let first = true;
-    const split = SplitText.create(h1, {
-      type: "lines",
-      linesClass: "line",
-      mask: "lines",
-      autoSplit: true,
-      onSplit(self) {
-        h1.removeAttribute("data-split-pending");
-        place();
-        if (!first || reduced) return;
-        first = false;
-        return gsap.from(self.lines, {
-          yPercent: 115,
-          duration: 1,
-          stagger: 0.12,
-          ease: gsapEase.out,
-        });
-      },
-    });
-
+    place();
     const ro = new ResizeObserver(place);
     ro.observe(box);
 
@@ -89,11 +73,14 @@ export function HeroTitle() {
     if (reduced) {
       gsap.set([line, head], { autoAlpha: 1 });
       gsap.set([trail, bow], { autoAlpha: 0 });
-      return () => {
-        ro.disconnect();
-        split.revert();
-      };
+      return () => ro.disconnect();
     }
+
+    // The bow rises 0.55s into the line reveal. GSAP loads after the reveal has
+    // started (on a slow phone, maybe after it ended), so count from when it began.
+    const reveal = h1.getAnimations({ subtree: true })[0];
+    const now = Number(document.timeline.currentTime ?? 0);
+    const elapsed = reveal?.startTime != null ? (now - Number(reveal.startTime)) / 1000 : 0;
 
     gsap.set([trail, line, head, bow], { autoAlpha: 0 });
     gsap.set(trail, { scaleX: 0, transformOrigin: "0% 50%" });
@@ -101,7 +88,7 @@ export function HeroTitle() {
 
     const fly = { duration: 0.5, ease: "power1.in" };
     gsap
-      .timeline({ delay: 0.55 })
+      .timeline({ delay: Math.max(0, ARROW_DELAY - elapsed) })
       // Raise the bow and draw the string, pulling the arrow back with it.
       .fromTo(bow, { autoAlpha: 0, x: -10 }, { autoAlpha: 1, x: 0, duration: 0.35 })
       .set(head, { autoAlpha: 1, x: () => -trailLen }, "<")
@@ -120,22 +107,25 @@ export function HeroTitle() {
       .to(trail, { autoAlpha: 0, duration: 0.7, ease: gsapEase.inOut }, "hit")
       .to(bow, { autoAlpha: 0, x: -10, duration: 0.5, ease: gsapEase.inOut }, "hit+=0.25");
 
-    return () => {
-      ro.disconnect();
-      split.revert();
-    };
+    return () => ro.disconnect();
   });
 
   return (
     <div ref={root} className="relative mt-6">
       <h1
         data-hero-title
-        data-split-pending
         className="font-display text-5xl leading-[1.02] tracking-tight sm:text-7xl"
       >
-        The agent economy,
-        <br />
-        settled <em className="whitespace-nowrap text-primary">per call</em>.
+        <span className="line-mask block overflow-hidden">
+          <span className={LINE} style={{ animationDelay: "0.1s" }}>
+            The agent economy,
+          </span>
+        </span>
+        <span className="line-mask block overflow-hidden">
+          <span className={LINE} style={{ animationDelay: "0.22s" }}>
+            settled <em className="whitespace-nowrap text-primary">per call</em>.
+          </span>
+        </span>
       </h1>
 
       <div

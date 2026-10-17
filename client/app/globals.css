@@ -156,10 +156,10 @@
   }
   html {
     @apply font-sans antialiased;
-  }
-  body {
     /* Keep anything scrolled to (focus, anchors, Lenis) clear of the sticky header. */
     scroll-padding-top: 7rem;
+  }
+  body {
     @apply bg-background text-foreground;
   }
   /* Big headlines are the editorial serif; small headings stay in the sans. */
@@ -208,23 +208,44 @@
   }
 }
 
-/* Hero headline (components/landing/hero-title.tsx). It starts hidden so the
-   line reveal doesn't flash; GSAP clears data-split-pending once split, and the
-   failsafe shows it anyway if scripts never run. */
-[data-split-pending] {
-  visibility: hidden;
-  animation: split-failsafe 0s linear 2.5s forwards;
-}
-@keyframes split-failsafe {
-  to {
-    visibility: visible;
+/* Hero headline (components/landing/hero-title.tsx): each line rises out of a
+   .line-mask in plain CSS, so the headline paints with the first frame instead
+   of waiting for scripts. */
+@keyframes line-rise {
+  from {
+    transform: translateY(115%);
   }
 }
-/* SplitText clips each line in a .line-mask; pad it so serif descenders and
-   italic overhangs aren't cut, without changing the line spacing. */
+@utility animate-line-rise {
+  animation: line-rise 1s var(--ease-out-quint) both;
+}
+/* Pad each mask so serif descenders and italic overhangs aren't cut, without
+   changing the line spacing. */
 [data-hero-title] .line-mask {
   padding: 0.06em 0.1em 0.18em 0;
   margin: -0.06em -0.1em -0.18em 0;
+}
+
+/* Hero entrance (components/landing/hero.tsx). Plain CSS, not motion, so it
+   starts with the first paint instead of waiting for hydration: the hero copy
+   is the page's largest paint. Stagger with an inline animation-delay. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@utility animate-rise-in {
+  animation: rise-in 0.55s var(--ease-out-quint) both;
+}
+@utility animate-slide-in {
+  animation: slide-in 0.35s var(--ease-out-quint) both;
 }
 
 /* A new receipt row slides in with a brief vermilion wash (components/run/receipt-table.tsx). */

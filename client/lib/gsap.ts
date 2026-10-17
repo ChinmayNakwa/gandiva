@@ -7,31 +7,28 @@ import { onLenisScroll } from "@/lib/scroll";
 type GsapModule = typeof import("gsap");
 export type Gsap = GsapModule["gsap"];
 export type ScrollTriggerType = typeof import("gsap/ScrollTrigger").ScrollTrigger;
-export type SplitTextType = typeof import("gsap/SplitText").SplitText;
 
 export type GsapKit = {
   gsap: Gsap;
   ScrollTrigger: ScrollTriggerType;
-  SplitText: SplitTextType;
 };
 
 let loading: Promise<GsapKit> | null = null;
 
 /**
- * Load GSAP, ScrollTrigger and SplitText on first use only, so pages without
+ * Load GSAP and ScrollTrigger on first use only, so pages without
  * GSAP animations never download them. Safe to call many times.
  */
 export function loadGsap(): Promise<GsapKit> {
   loading ??= Promise.all([
     import("gsap"),
     import("gsap/ScrollTrigger"),
-    import("gsap/SplitText"),
-  ]).then(([{ gsap }, { ScrollTrigger }, { SplitText }]) => {
-    gsap.registerPlugin(ScrollTrigger, SplitText);
+  ]).then(([{ gsap }, { ScrollTrigger }]) => {
+    gsap.registerPlugin(ScrollTrigger);
     gsap.defaults({ ease: gsapEase.out, duration: duration.slow });
     // Keep scroll-driven animations in step with Lenis smooth scrolling.
     onLenisScroll(ScrollTrigger.update);
-    return { gsap, ScrollTrigger, SplitText };
+    return { gsap, ScrollTrigger };
   });
   return loading;
 }
