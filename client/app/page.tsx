@@ -20,7 +20,7 @@ export default function Home() {
       <section className="mx-auto w-full max-w-6xl px-4 pb-24">
         <Reveal>
           <div className="flex flex-col items-center gap-5 rounded-3xl border border-primary/20 bg-primary/5 px-6 py-14 text-center">
-            <h2 className="font-heading text-2xl font-semibold sm:text-3xl">
+            <h2 className="font-display text-3xl sm:text-4xl">
               See it settle for yourself
             </h2>
             <p className="max-w-xl text-sm text-muted-foreground">
