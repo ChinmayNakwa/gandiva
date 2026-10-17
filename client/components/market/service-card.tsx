@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import { motion } from "motion/react";
 import { LinkIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -7,25 +8,56 @@ import { CategoryBadge } from "@/components/status-badge";
 import { AddrLink } from "@/components/tx-link";
 import { ADVERSARIAL_IDS, CHAIN_IDS, pct, usdc } from "@/lib/format";
 import type { Service } from "@/lib/types";
+import { spring, transition } from "@/lib/motion";
+import { cn } from "cn";
+
+/**
+ * The card's border draws itself on hover: top, right, bottom, left in turn.
+ * Transform only, so it stays cheap on weak GPUs; it all retracts at once.
+ */
+function EdgeDraw({ tone }: { tone: string }) {
+  const edge = cn(
+    "absolute transition-transform duration-200 ease-out-quint motion-reduce:transition-none",
+    tone,
+  );
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0 z-10">
+      <span className={cn(edge, "top-0 right-3 left-3 h-0.5 origin-left scale-x-0 group-hover:scale-x-100")} />
+      <span className={cn(edge, "top-3 right-0 bottom-3 w-0.5 origin-top scale-y-0 group-hover:scale-y-100 group-hover:delay-150")} />
+      <span className={cn(edge, "right-3 bottom-0 left-3 h-0.5 origin-right scale-x-0 group-hover:scale-x-100 group-hover:delay-300")} />
+      <span className={cn(edge, "top-3 bottom-3 left-0 w-0.5 origin-bottom scale-y-0 group-hover:scale-y-100 group-hover:delay-450")} />
+    </span>
+  );
+}
 
 export function ServiceCard({
   service,
   index,
+  ref,
 }: {
   service: Service;
   index: number;
+  ref?: Ref<HTMLDivElement>;
 }) {
   const adversarial = ADVERSARIAL_IDS.has(service.id);
   const rep = service.reputation;
 
   return (
     <motion.div
+      ref={ref}
+      id={`svc-${service.id}`}
+      tabIndex={-1}
+      layout="position"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.32) }}
-      whileHover={{ y: -4 }}
-      className="h-full"
+      exit={{ opacity: 0, scale: 0.96, transition: transition.base }}
+      transition={{ ...transition.base, delay: Math.min(index * 0.04, 0.32), layout: spring.soft }}
+      whileHover={{ y: -4, transition: spring.soft }}
+      className="group relative h-full min-w-0 scroll-mt-40 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
     >
+      <EdgeDraw tone={adversarial ? "bg-bad/70" : "bg-primary"} />
+      {/* Search lands here: the page restarts a brief wash on this layer. */}
+      <span data-flash aria-hidden className="pointer-events-none absolute inset-0 z-10 rounded-xl" />
       <Card
         className={
           "h-full ring-1 transition-colors " +
