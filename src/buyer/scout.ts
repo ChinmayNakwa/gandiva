@@ -267,7 +267,7 @@ function explain(run: RunState, plan: TaskPlan): string {
 }
 
 /** Buy one call in a category with reputation-ranked failover (e.g. junk output -> next seller). */
-export async function buyCategory(opts: { category: Category; input: Record<string, unknown>; budget: string; maxConcurrency?: number }) {
+export async function buyCategory(opts: { category: Category; input: Record<string, unknown>; budget: string; maxConcurrency?: number; prefer?: string }) {
   const run: RunState = {
     id: `buy-${randomUUID().slice(0, 6)}`,
     task: `buy ${opts.category} ${JSON.stringify(opts.input)}`,
@@ -284,7 +284,10 @@ export async function buyCategory(opts: { category: Category; input: Record<stri
   const budget = new BudgetLedger(BigInt(run.budget));
   // Only sellers whose listed input fits the request can do this job (a category now holds different kinds of work).
   const fits = searchServices({ category: opts.category }).filter((s) => validateInput(s.inputSchema, structuredClone(opts.input)).ok);
-  const r = await buyFrom(new Ctx(run, budget, run.maxConcurrency, pay), opts.category, fits, `buy ${opts.category}`, opts.input);
+  const ctx = new Ctx(run, budget, run.maxConcurrency, pay);
+  // A caller may name a seller to try first; it still has to pass every check, and failing over works as usual.
+  if (opts.prefer && fits.some((s) => s.id === opts.prefer)) ctx.preferred.set(opts.category, opts.prefer);
+  const r = await buyFrom(ctx, opts.category, fits, `buy ${opts.category}`, opts.input);
   run.state = r.data ? "completed" : r.budgetBlocked ? "needs_more_budget" : "failed";
   run.spent = budget.spent.toString();
   run.remaining = (budget.budget - budget.spent).toString();

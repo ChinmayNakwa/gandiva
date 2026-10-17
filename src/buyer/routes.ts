@@ -66,7 +66,7 @@ buyer.post("/buy", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!["data", "inference", "scraping"].includes(body.category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
   try {
-    return c.json(await buyCategory({ category: body.category, input: body.input ?? {}, budget: String(body.budget ?? "0.05") }));
+    return c.json(await buyCategory({ category: body.category, input: body.input ?? {}, budget: String(body.budget ?? "0.05"), prefer: typeof body.prefer === "string" ? body.prefer : undefined }));
   } catch (err: any) {
     return c.json({ error: err?.message ?? String(err) }, 400);
   }

@@ -8,13 +8,15 @@ import { registerRef, startRefSeller } from "../interop/ref-seller.js";
 // runs and be outranked. A fresh id makes the test repeatable.
 const id = `ref-junk-${Date.now().toString(36)}`;
 const payTo = process.env.PAYTO_JUNK_FX!;
-const ref = await startRefSeller({ port: 4103, price: "$0.0005", payTo, junk: true });
-await registerRef(id, ref.url, "500", payTo, "Reference seller that returns junk with status 200");
+// Same price as fx-rates, as a judge's reference seller would be. Unranked, it would sort below fx-rates,
+// so the buyer is told to try it first and must fail over by itself.
+const ref = await startRefSeller({ port: 4103, price: "$0.001", payTo, junk: true });
+await registerRef(id, ref.url, "1000", payTo, "Reference seller that returns junk with status 200");
 
 const rep = async () => (await api(`/registry/services/${id}`)).reputation;
 console.log(`${id} reputation before:`, await rep());
 
-const run = await api("/buyer/buy", { category: "data", input: { from: "GBP", to: "INR" }, budget: "0.01" });
+const run = await api("/buyer/buy", { category: "data", input: { from: "GBP", to: "INR" }, budget: "0.01", prefer: id });
 for (const p of run.purchases) console.log(`  ${p.service}: ${p.status}, paid ${p.paid}${p.txHash ? ` tx ${p.txHash}` : ""}${p.reason ? ` - ${p.reason}` : ""}`);
 console.log("final data used:", JSON.stringify(run.result));
 const after = await rep();

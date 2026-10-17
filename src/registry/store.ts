@@ -256,7 +256,16 @@ export function searchServices(q: { category?: string; maxPrice?: string; sort?:
   return list;
 }
 
-/** Buyer's choice order: listings whose 402 contradicts them last, then reputation score, then price, then latency. */
+let credibilityScore: (serviceId: string) => number | undefined = () => undefined;
+/** Lets the credibility module feed ranking without an import cycle. */
+export function setCredibilityLookup(fn: (serviceId: string) => number | undefined) {
+  credibilityScore = fn;
+}
+
+/**
+ * Buyer's choice order: listings whose 402 contradicts them last, then reputation score, then price, then credibility
+ * (proofs, stake, history), then latency.
+ */
 export function rankCompare(a: ServiceWithReputation, b: ServiceWithReputation) {
   const dm = Number(a.verification === "mismatch") - Number(b.verification === "mismatch");
   if (dm) return dm;
@@ -264,6 +273,8 @@ export function rankCompare(a: ServiceWithReputation, b: ServiceWithReputation) 
   if (Math.abs(ds) > 0.05) return ds;
   const dp = BigInt(a.price) - BigInt(b.price);
   if (dp !== 0n) return dp < 0n ? -1 : 1;
+  const dc = (credibilityScore(b.id) ?? 0) - (credibilityScore(a.id) ?? 0);
+  if (dc) return dc;
   return (a.reputation.medianLatencyMs ?? 1e9) - (b.reputation.medianLatencyMs ?? 1e9);
 }
 

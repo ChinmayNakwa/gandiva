@@ -8,6 +8,7 @@ import { buyer } from "./buyer/routes.js";
 import { getPayer } from "./buyer/scout.js";
 import { llmAvailable } from "./llm.js";
 import { mcp } from "./mcp/server.js";
+import { startCredibilityRefresh } from "./registry/credibility.js";
 import { verifyBuiltIns } from "./registry/probe.js";
 import { stakeEnabled } from "./stake/index.js";
 import { registry } from "./registry/routes.js";
@@ -70,7 +71,8 @@ serve({ fetch: app.fetch, port: config.port }, () => {
   }
   verifyBuiltIns()
     .then(() => console.log("  registry   built-in listings probed"))
-    .catch((err) => console.error(`  registry   probing built-ins failed: ${err.message}`));
+    .catch((err) => console.error(`  registry   probing built-ins failed: ${err.message}`))
+    .finally(() => startCredibilityRefresh());
   if (stakeEnabled()) console.log(`  stake      SellerStake ${config.stake.contract}`);
 });
 

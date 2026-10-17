@@ -10,6 +10,7 @@ import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { stakeRoutes } from "../stake/routes.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
+import { credibilityCached, credibilityFor, ProofError, proofMessage, submitPayToProof } from "./credibility.js";
 import { deleteOwnedService, deleteService, getService, listByOwner, listLedger, listSales, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices } from "./store.js";
 
 export const registry = new Hono();
@@ -18,13 +19,36 @@ const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeE
 
 registry.get("/services", (c) => {
   const { category, maxPrice, sort } = c.req.query();
-  return c.json({ services: searchServices({ category, maxPrice, sort }) });
+  return c.json({
+    services: searchServices({ category, maxPrice, sort }).map((s) => {
+      const cred = credibilityCached(s.id);
+      return { ...s, credibility: cred ? { score: cred.score, level: cred.level } : null };
+    }),
+  });
 });
 
-registry.get("/services/:id", (c) => {
+registry.get("/services/:id", async (c) => {
   const s = getService(c.req.param("id"));
   if (!s) return c.json({ error: "service not found" }, 404);
-  return c.json({ ...s, reputation: reputationFor(s.id) });
+  return c.json({ ...s, reputation: reputationFor(s.id), credibility: await credibilityFor(s.id) });
+});
+
+registry.get("/services/:id/credibility", async (c) => {
+  const s = getService(c.req.param("id"));
+  if (!s) return c.json({ error: "service not found" }, 404);
+  return c.json({ serviceId: s.id, payTo: s.payTo, proofMessage: proofMessage(s), ...(await credibilityFor(s.id, true)) });
+});
+
+/** Proves control of the listing's payTo: body { signature } over the proofMessage, signed by the payTo wallet. */
+registry.post("/services/:id/proof", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.signature !== "string") return c.json({ error: "signature is required" }, 400);
+  try {
+    await submitPayToProof(c.req.param("id"), body.signature);
+    return c.json({ ok: true, credibility: await credibilityFor(c.req.param("id"), true) });
+  } catch (err: any) {
+    return c.json({ error: err instanceof ProofError ? err.message : "invalid signature" }, err?.message === "service not found" ? 404 : 400);
+  }
 });
 
 const MAX_LISTING_BYTES = 32 * 1024;
