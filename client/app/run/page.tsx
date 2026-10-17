@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -10,24 +9,32 @@ import {
 } from "@/components/ui/card";
 import { AgentWalletCard } from "@/components/agent/agent-wallet-card";
 import { PageIntro } from "@/components/page-intro";
-import { Stat } from "@/components/stat";
 import { TaskForm, type RunForm } from "@/components/run/task-form";
+import { Handshake } from "@/components/run/handshake";
 import { LiveLog } from "@/components/run/live-log";
 import { ReceiptTable } from "@/components/run/receipt-table";
+import { RunStatus } from "@/components/run/run-status";
+import { SoundToggle } from "@/components/run/sound-toggle";
+import { usePaymentNotices } from "@/components/run/use-payment-notices";
 import { Explanation, QuoteView, ResultView } from "@/components/run/result-view";
 import { startRun } from "@/lib/api";
 import { EXAMPLE_TASKS } from "@/lib/examples";
 import { useInfo, useRun } from "@/lib/hooks";
-import { usdc } from "@/lib/format";
-import type { RunStateName } from "@/lib/types";
+import { getLenis } from "@/lib/scroll";
 
-const STATE_TONE: Record<RunStateName, string> = {
-  running: "border-info/40 bg-info/10 text-info",
-  completed: "border-ok/40 bg-ok/10 text-ok",
-  partial: "border-warn/40 bg-warn/10 text-warn",
-  needs_more_budget: "border-warn/40 bg-warn/10 text-warn",
-  failed: "border-bad/40 bg-bad/10 text-bad",
-};
+/** Bring the live view into sight once a run starts, so nobody has to hunt for it. */
+function reveal(el: HTMLElement | null) {
+  if (!el) return;
+  const lenis = getLenis();
+  // Both paths honour the marker's scroll-margin (clears the sticky header).
+  // Lenis caches the page height; the page just grew, so re-measure first or
+  // the scroll is clamped to the old (unscrollable) length.
+  if (lenis) {
+    lenis.resize();
+    lenis.scrollTo(el);
+  }
+  else el.scrollIntoView({ block: "start" });
+}
 
 export default function RunPage() {
   const { data: info } = useInfo();
@@ -44,10 +51,14 @@ export default function RunPage() {
 
   const { data: run } = useRun(runId);
   const running = starting || run?.state === "running";
+  const liveRef = useRef<HTMLDivElement>(null);
+  usePaymentNotices(run);
 
   async function onStart() {
     setStarting(true);
     setError(null);
+    // Wait a frame so the "starting" placeholder exists before scrolling to it.
+    requestAnimationFrame(() => reveal(liveRef.current));
     try {
       const { runId: id } = await startRun({
         task: form.task,
@@ -70,7 +81,11 @@ export default function RunPage() {
         eyebrow="buyer agent"
         title="Run a task"
         description="Give the agent a job and a budget. It plans the work, discovers sellers in the registry, pays each one per call over x402, falls back when a seller misbehaves, and returns results with a full receipt trail."
-      />
+      >
+        <div className="mt-2">
+          <SoundToggle />
+        </div>
+      </PageIntro>
 
       <div className="mb-6">
         <AgentWalletCard />
@@ -97,40 +112,32 @@ export default function RunPage() {
         </CardContent>
       </Card>
 
-      {run ? (
-        <div className="mt-6 flex flex-col gap-6">
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Stat
-              label="Run"
-              value={run.id}
-              hint={[run.dryRun ? "dry run" : "", run.mode === "legacy" ? "built-in books pipeline" : (run.planner ?? "")].filter(Boolean).join(" · ")}
-            />
-            <Stat
-              label="State"
-              value={
-                <Badge
-                  variant="outline"
-                  className={"font-mono " + STATE_TONE[run.state]}
-                >
-                  {run.state.replace(/_/g, " ")}
-                </Badge>
-              }
-            />
-            <Stat label="Spent" value={`${usdc(run.spent)} USDC`} hint={`of ${usdc(run.budget)} budget`} />
-            <Stat
-              label="Remaining"
-              value={`${usdc(run.remaining)} USDC`}
-            />
-          </div>
+      <div ref={liveRef} className="scroll-mt-28" />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Agent log</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LiveLog lines={run.log} />
-            </CardContent>
-          </Card>
+      {starting && !run ? (
+        <div className="mt-6 animate-pulse rounded-2xl border border-border bg-card p-6">
+          <div className="font-mono text-[11px] text-muted-foreground">new run</div>
+          <p className="mt-2 font-display text-3xl sm:text-4xl">Starting the agent…</p>
+          <div className="mt-5 h-1.5 rounded-full bg-muted" />
+        </div>
+      ) : null}
+
+      {run ? (
+        <div key={run.id} className="mt-6 flex flex-col gap-6">
+          <RunStatus run={run} />
+
+          <Handshake run={run} />
+
+          {run.result && !run.dryRun ? (
+            <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <CardHeader>
+                <CardTitle>Result</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResultView run={run} />
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -141,6 +148,15 @@ export default function RunPage() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle>Agent log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <LiveLog lines={run.log} />
+            </CardContent>
+          </Card>
+
           {run.quote ? (
             <Card>
               <CardHeader>
@@ -148,17 +164,6 @@ export default function RunPage() {
               </CardHeader>
               <CardContent>
                 <QuoteView quote={run.quote} budget={run.budget} />
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {run.result && !run.dryRun ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Result</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResultView run={run} />
               </CardContent>
             </Card>
           ) : null}
