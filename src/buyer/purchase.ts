@@ -3,6 +3,8 @@ import { EXPLORER_TX, fromUnits } from "../config.js";
 import type { Category, Service, ServiceWithReputation } from "../registry/store.js";
 import type { BudgetLedger } from "../x402/budget.js";
 import type { CallPhase, CallResult, OnCallPhase } from "../x402/safePayer.js";
+import { scheduler, type QueueInfo, type Slot } from "../x402/scheduler.js";
+import { reputationFor } from "../registry/store.js";
 import type { TaskPlan } from "./planner.js";
 
 export interface Purchase {
@@ -49,6 +51,8 @@ export interface InflightCall {
   phase: CallPhase;
   /** Amount the 402 asked for, once a quote has passed the checks. */
   asked?: string;
+  /** Present while the call waits for a slot in the priority scheduler. */
+  queue?: QueueInfo;
   startedAt: string;
   phaseAt: string;
 }
@@ -106,13 +110,38 @@ export class Ctx {
     this.run.log.push(`${new Date().toISOString().slice(11, 19)} ${msg}`);
   }
   private calls = 0;
-  /** Pay one seller, listing the call in `run.inflight` with its live phase until it returns. */
-  async payTracked(step: string, s: Service, input: Record<string, unknown>): Promise<CallResult> {
+  /**
+   * Pay one seller, listing the call in `run.inflight` with its live phase until it returns. Calls that contend for the
+   * same wallet or seller wait in the priority scheduler first (see x402/scheduler.ts).
+   */
+  async payTracked(step: string, s: Service, input: Record<string, unknown>, opts: { retry?: boolean } = {}): Promise<CallResult> {
     const now = () => new Date().toISOString();
     const entry: InflightCall = { id: ++this.calls, step, service: s.name, serviceId: s.id, phase: "requesting", startedAt: now(), phaseAt: now() };
     const list = (this.run.inflight ??= []);
     list.push(entry);
+    let slot: Slot | undefined;
     try {
+      slot = await scheduler.acquire(
+        {
+          wallet: (this.run.buyer ?? "shared").toLowerCase(),
+          sellerId: s.id,
+          sellerName: s.name,
+          runId: this.run.id,
+          step,
+          price: BigInt(s.price),
+          budget: this.budget.budget,
+          spent: this.budget.budget - this.budget.remaining,
+          reputation: reputationFor(s.id).score,
+          retry: opts.retry,
+        },
+        (q) => (entry.queue = q),
+      );
+      delete entry.queue;
+      if (slot.beat.length || slot.forced) {
+        this.log(`${step}: ${s.name} started ahead of ${slot.beat.length} waiting call(s), priority ${slot.priority.toFixed(2)}${slot.forced ? " (waited too long, started anyway)" : ""}`);
+      }
+      entry.startedAt = now();
+      entry.phaseAt = now();
       return await this.pay(s, input, {
         budget: this.budget,
         runId: this.run.id,
@@ -123,6 +152,7 @@ export class Ctx {
         },
       });
     } finally {
+      slot?.release();
       const i = list.indexOf(entry);
       if (i >= 0) list.splice(i, 1);
     }
@@ -176,7 +206,7 @@ export async function buyFrom(ctx: Ctx, poolKey: string, ranked: ServiceWithRepu
     if (r.reason?.startsWith("payment rejected: settlement failed")) {
       ctx.log(`${step}: ${s.name} settlement failed without charging; retrying once with a fresh signature`);
       await new Promise((res) => setTimeout(res, 1000));
-      r = await ctx.limit(() => ctx.payTracked(step, s, input));
+      r = await ctx.limit(() => ctx.payTracked(step, s, input, { retry: true }));
     }
     ctx.run.purchases.push({
       step,

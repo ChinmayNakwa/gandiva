@@ -119,6 +119,21 @@ On the Marketplace, **Compare** on any card opens a dashboard of the sellers the
 
 The API is `GET /registry/compare?category=data&selected=fx-rates`. The explanation code follows `rankCompare` step by step, and a unit test keeps the two in sync.
 
+### Priority scheduling for simultaneous payments
+
+All paid calls go through one scheduler (`src/x402/scheduler.ts`):
+
+- **Limits:** at most 5 run at once per paying wallet (`PAY_SLOTS_PER_WALLET`) and 4 per seller (`PAY_SLOTS_PER_SELLER`).
+- **Choosing who goes next:** when more calls want to start, the highest priority goes first. Priority is a weighted sum:
+  - 0.30 for a settlement retry (money is already in motion);
+  - 0.25 for time waited (ageing, so nothing starves);
+  - 0.20 for run progress (the share of its budget already spent);
+  - 0.15 for the seller's reputation;
+  - 0.10 for a smaller payment.
+- **Ties and waiting:** equal priority keeps arrival order, and no call waits more than 30 s. The agent chain can't deadlock against its own buyers.
+- **Where to see it:** the Run page shows queued calls and recent contention decisions, and `GET /buyer/queue` returns the same data.
+- **Budgets:** these rules decide the order of payments. The guarantee that spending never passes the budget still comes from the per-run budget reservations.
+
 ## License
 
 ISC

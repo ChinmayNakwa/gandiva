@@ -64,6 +64,9 @@ function finishedSteps(last: CallPhase, p?: Purchase): StepState[] {
 }
 
 function caption(call: InflightCall, phaseMs: number): string {
+  if (call.queue) {
+    return `Queued #${call.queue.position} for a payment slot · priority ${call.queue.priority.toFixed(2)} · another call to this wallet or seller goes first`;
+  }
   switch (call.phase) {
     case "requesting":
       return `Calling ${call.service}, waiting for its price (HTTP 402)…`;

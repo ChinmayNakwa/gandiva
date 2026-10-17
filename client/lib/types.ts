@@ -103,6 +103,24 @@ export interface StakeOverview {
   sellers: (StakePosition & { payTo: string; slashedCount: number; slashed: string })[];
 }
 
+export type PriorityFactor = "retry" | "waited" | "progress" | "reliability" | "smallness";
+
+export interface QueueStatus {
+  weights: Record<PriorityFactor, number>;
+  perWallet: number;
+  perSeller: number;
+  maxWaitMs: number;
+  busy: { wallets: Record<string, number>; sellers: Record<string, number> };
+  queue: { position: number; label: string; wallet: string; priority: number; factors: Record<PriorityFactor, number>; waitedMs: number }[];
+  contention: {
+    ts: string;
+    wallet: string;
+    winner: { label: string; priority: number; factors: Record<PriorityFactor, number> };
+    waiting: { label: string; priority: number; factors: Record<PriorityFactor, number> }[];
+    reason: string;
+  }[];
+}
+
 export interface LedgerEntry {
   id: number;
   ts: string;
@@ -167,6 +185,8 @@ export interface InflightCall {
   serviceId: string;
   phase: CallPhase;
   asked?: string;
+  /** Present while the call waits for a slot in the priority scheduler. */
+  queue?: { priority: number; position: number; waitedMs: number; factors: Record<PriorityFactor, number> };
   startedAt: string;
   phaseAt: string;
 }

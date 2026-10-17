@@ -4,6 +4,7 @@ import type {
   AgentWalletInfo,
   CompareResponse,
   Info,
+  QueueStatus,
   StakeOverview,
   LedgerResponse,
   Run,
@@ -49,6 +50,10 @@ export function useCompare(category: string | null, selected?: string | null) {
 
 export function useStake() {
   return useSWR<StakeOverview>("/registry/stake", fetcher, { refreshInterval: 15000 });
+}
+
+export function useQueue(active = true) {
+  return useSWR<QueueStatus>(active ? "/buyer/queue" : null, fetcher, { refreshInterval: 1500 });
 }
 
 /** The signed-in user's agent wallet (address, balance, spend cap). Pass false while signed out. */

@@ -4,6 +4,7 @@ import { resolvePlannerLlm } from "../agents/llm.js";
 import { currentUser } from "../auth/routes.js";
 import { HostedError } from "../hosted/agents.js";
 import { config, fromUnits, toUnits } from "../config.js";
+import { scheduler } from "../x402/scheduler.js";
 import { buyCategory, buyOnce, getRun, listRuns, startTask } from "./scout.js";
 
 export const buyer = new Hono();
@@ -54,6 +55,9 @@ buyer.post("/run", async (c) => {
     return c.json({ error: err?.message ?? String(err) }, 400);
   }
 });
+
+/** Priority scheduler state: weights, busy slots, calls waiting right now and recent contention decisions. */
+buyer.get("/queue", (c) => c.json(scheduler.status()));
 
 buyer.get("/runs", (c) => c.json({ runs: listRuns().map(({ id, task, state, startedAt, spent, budget }) => ({ id, task, state, startedAt, spent, budget })) }));
 

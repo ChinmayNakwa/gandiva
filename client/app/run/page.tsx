@@ -15,6 +15,7 @@ import { LiveLog } from "@/components/run/live-log";
 import { ReceiptTable } from "@/components/run/receipt-table";
 import { RunStatus } from "@/components/run/run-status";
 import { SoundToggle } from "@/components/run/sound-toggle";
+import { SchedulerPanel } from "@/components/run/scheduler-panel";
 import { usePaymentNotices } from "@/components/run/use-payment-notices";
 import { Explanation, QuoteView, ResultView } from "@/components/run/result-view";
 import { startRun } from "@/lib/api";
@@ -127,6 +128,8 @@ export default function RunPage() {
           <RunStatus run={run} />
 
           <Handshake run={run} />
+
+          <SchedulerPanel />
 
           {run.result && !run.dryRun ? (
             <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500">
