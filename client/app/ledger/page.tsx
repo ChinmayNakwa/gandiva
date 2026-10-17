@@ -93,7 +93,7 @@ export default function LedgerPage() {
             {error instanceof Error ? error.message : "Failed to load ledger."}
           </p>
         ) : (
-          <LedgerTable entries={isLoading && !entries.length ? [] : entries} />
+          <LedgerTable entries={isLoading && !entries.length ? [] : entries} loaded={!isLoading} />
         )}
       </section>
     </div>

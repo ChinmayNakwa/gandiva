@@ -41,7 +41,7 @@ export default function SalesPage() {
             {error instanceof Error ? error.message : "Failed to load sales."}
           </p>
         ) : (
-          <SalesTable sales={isLoading && !sales.length ? [] : sales} />
+          <SalesTable sales={isLoading && !sales.length ? [] : sales} loaded={!isLoading} />
         )}
       </section>
     </div>
