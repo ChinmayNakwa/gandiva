@@ -99,7 +99,7 @@ export function ServiceCard({
                   : "no calls yet"}
               </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted dark:bg-foreground/12">
               <div
                 className="h-full rounded-full bg-primary"
                 style={{ width: `${Math.round(rep.score * 100)}%` }}

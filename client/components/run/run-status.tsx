@@ -102,7 +102,7 @@ export function RunStatus({ run }: { run: Run }) {
             {run.purchases.length === 1 ? "" : "s"}
           </span>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted dark:bg-foreground/12">
           <motion.div
             className="h-full origin-left rounded-full bg-primary"
             initial={false}

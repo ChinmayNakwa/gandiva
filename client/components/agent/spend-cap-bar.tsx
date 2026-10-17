@@ -39,7 +39,7 @@ export function SpendCapBar({ cap, label }: { cap: SpendCap; label: string }) {
         aria-valuemax={limit}
         aria-valuenow={used}
         aria-valuetext={`${trim(cap.usedUsdc)} of ${trim(cap.limitUsdc)} USDC used in the last ${cap.windowMinutes} minutes`}
-        className="h-1.5 overflow-hidden rounded-full bg-muted"
+        className="h-1.5 overflow-hidden rounded-full bg-muted dark:bg-foreground/12"
       >
         <div
           className={cn(
