@@ -68,7 +68,8 @@ export function RowCard({
         <div className="font-mono text-xl text-primary">
           {amount} <span className="text-xs text-muted-foreground">USDC</span>
         </div>
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 font-mono text-[11px]">
+        {/* gap-y-2 keeps stacked links (buyer, seller, tx) 24px apart for touch. */}
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 font-mono text-[11px]">
           {fields.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>

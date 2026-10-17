@@ -21,8 +21,8 @@ export default function SalesPage() {
         description="Seller-side view: every payment our sellers received or refused, from any x402 client (including standard SDK clients). Sellers settle only after delivering valid output, so failed work is never charged."
       />
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Stat label="Settled volume" value={`${usdc(totalUnits)} USDC`} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat className="col-span-2 sm:col-span-1" label="Settled volume" value={`${usdc(totalUnits)} USDC`} />
         <Stat label="Settled" value={paid.length} hint="paid receipts" />
         <Stat
           label="Not settled"
@@ -30,12 +30,14 @@ export default function SalesPage() {
           hint="failed, refused or replayed"
         />
         <Stat
+          className="col-span-2 sm:col-span-1"
           label="Sellers"
           value={new Set(sales.map((s) => s.seller)).size}
         />
       </div>
 
-      <section className="mt-6">
+      {/* Holds the footer below the fold while the list loads (no layout shift). */}
+      <section className="mt-6 min-h-[60svh]">
         {error ? (
           <p className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad">
             {error instanceof Error ? error.message : "Failed to load sales."}

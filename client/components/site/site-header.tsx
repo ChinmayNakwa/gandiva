@@ -88,8 +88,8 @@ export function SiteHeader() {
       </div>
 
       <div className="border-t border-border/60">
-        {/* One line on phones (scrolls sideways) instead of wrapping into a block. */}
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-x-4 overflow-x-auto px-4 py-1.5 font-mono text-[11px] whitespace-nowrap text-muted-foreground scrollbar-none md:flex-wrap">
+        {/* One line on phones (scrolls sideways, the fade hints at more) instead of wrapping into a block. */}
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-x-4 overflow-x-auto px-4 py-1.5 font-mono text-[11px] whitespace-nowrap text-muted-foreground scrollbar-none mask-r-from-85% md:flex-wrap md:mask-none">
           <InfoBar />
         </div>
       </div>

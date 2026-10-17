@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useInfo, useLedger, useServices } from "@/lib/hooks";
 import { Counter } from "./counter";
 import { Reveal } from "./reveal";
@@ -46,11 +47,17 @@ export function MetricsBand() {
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-16">
       <Reveal>
-        <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
-          {METRICS.map((m) => (
+        <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-6 lg:grid-cols-5">
+          {/* Two up on phones, 3 + 2 on tablets, one row on desktop: no empty cell
+              ever shows the border colour through the gap. */}
+          {METRICS.map((m, i) => (
             <div
               key={m.label}
-              className="flex flex-col gap-1 bg-card px-5 py-6"
+              className={cn(
+                "flex flex-col gap-1 bg-card px-5 py-6 lg:col-span-1",
+                i < 2 ? "sm:col-span-3" : "sm:col-span-2",
+                i === METRICS.length - 1 && "col-span-2",
+              )}
             >
               <div className="font-mono text-3xl text-primary">{m.value}</div>
               <div className="text-xs uppercase tracking-widest text-muted-foreground">

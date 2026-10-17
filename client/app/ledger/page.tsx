@@ -38,8 +38,9 @@ export default function LedgerPage() {
         description="Every call the buyer attempted: what a seller listed, what it actually asked for at the 402 challenge, and what we paid. Refusals and rejects are recorded even though no money moved."
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat
+          className="col-span-2 sm:col-span-1"
           label="Total paid"
           value={`${usdc(data?.totalPaid)} USDC`}
           hint={`${data?.totalPaid ?? "0"} units`}
@@ -57,6 +58,7 @@ export default function LedgerPage() {
         />
         <Stat label="Refused" value={count("refused")} hint="never signed" />
         <Stat
+          className="col-span-2 sm:col-span-1"
           label="Failed"
           value={count("failed_not_charged")}
           hint="not charged"
@@ -87,7 +89,8 @@ export default function LedgerPage() {
         </span>
       </div>
 
-      <section className="mt-4">
+      {/* Holds the footer below the fold while the list loads (no layout shift). */}
+      <section className="mt-4 min-h-[60svh]">
         {error ? (
           <p className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad">
             {error instanceof Error ? error.message : "Failed to load ledger."}

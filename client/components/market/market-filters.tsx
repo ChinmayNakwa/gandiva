@@ -98,7 +98,7 @@ export function MarketFiltersBar({
         >
           <SearchIcon className="size-4" />
           Search services
-          <kbd className="ml-auto rounded border border-border bg-muted px-1.5 font-mono text-[10px]">
+          <kbd className="ml-auto rounded border pointer-coarse:hidden border-border bg-muted px-1.5 font-mono text-[10px]">
             {shortcut}
           </kbd>
         </button>
