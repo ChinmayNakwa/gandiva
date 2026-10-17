@@ -11,6 +11,7 @@ import { withdrawFromAgent } from "@/lib/api";
 import { toUnits } from "@/lib/format";
 import { useAgentWallet, useInfo } from "@/lib/hooks";
 import { fundAgentWallet, walletErrorMessage } from "@/lib/wallet";
+import { PlannerLlmForm } from "./planner-llm-form";
 import { SpendCapBar } from "./spend-cap-bar";
 
 type Notice = { tone: "ok" | "bad" | "info"; text: string; href?: string | null };
@@ -186,6 +187,8 @@ export function AgentWalletCard() {
                 ))}
               </div>
             ) : null}
+
+            <PlannerLlmForm current={agent.plannerLlm} onChanged={() => void mutate()} />
           </>
         )}
       </CardContent>

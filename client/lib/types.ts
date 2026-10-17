@@ -234,5 +234,7 @@ export interface AgentWalletInfo {
   balanceError: string | null;
   spendCap: { enabled: boolean; limitUsdc: string; windowMinutes: number; usedUsdc: string; remainingUsdc: string };
   explorer: string;
+  /** The user's own Ollama settings for planning (never the key). null = their runs plan on the server's key. */
+  plannerLlm: { host: string; model: string; hasKey: boolean } | null;
   withdrawals: { id: number; ts: string; amount_usdc: string; status: "settled" | "failed" | "unknown"; tx_hash: string | null; explorer: string | null; reason: string | null }[];
 }

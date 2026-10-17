@@ -90,6 +90,11 @@ export const testAgent = (form: Omit<AgentForm, "name" | "description" | "price"
 export const withdrawFromAgent = (amount: string) =>
   send<{ amount_usdc: string; tx_hash: string; explorer: string | null }>("POST", "/agent/withdraw", { amount });
 
+/** Saves (after one tiny check call) the signed-in user's own Ollama settings for Scout's planning. Leave apiKey out to keep the stored one. */
+export const savePlannerLlm = (form: { host?: string; model?: string; apiKey?: string }) =>
+  send<{ host: string; model: string; hasKey: boolean }>("PUT", "/agent/llm", form);
+export const clearPlannerLlm = () => send<{ ok: true }>("DELETE", "/agent/llm");
+
 export const saveListing = (form: ListingForm) => send<Service>("POST", "/registry/mine/services", form);
 export const deleteListing = (id: string) => send<{ ok: true }>("DELETE", `/registry/mine/services/${encodeURIComponent(id)}`);
 
