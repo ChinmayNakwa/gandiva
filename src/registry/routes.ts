@@ -5,7 +5,7 @@ import { ZodError } from "zod";
 import { currentUser } from "../auth/routes.js";
 import { config, EXPLORER_TX, fromUnits } from "../config.js";
 import { listWithdrawals } from "../agents/wallet.js";
-import { chainInfo, listChainsFor } from "../chains/chains.js";
+import { chainInfo, kindOf, listChainsFor } from "../chains/chains.js";
 import { chainRoutes } from "../chains/routes.js";
 import { isChainService } from "../chains/store.js";
 import { listHostedFor } from "../hosted/agents.js";
@@ -27,7 +27,7 @@ registry.get("/services", (c) => {
   return c.json({
     services: searchServices({ category, maxPrice, sort }).map((s) => {
       const cred = credibilityCached(s.id);
-      return { ...s, credibility: cred ? { score: cred.score, level: cred.level } : null, chain: chainInfo(s.id) };
+      return { ...s, credibility: cred ? { score: cred.score, level: cred.level } : null, chain: chainInfo(s.id), kind: kindOf(s.id) };
     }),
   });
 });

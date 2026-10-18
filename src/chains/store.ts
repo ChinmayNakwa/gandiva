@@ -1,11 +1,24 @@
 import { db } from "../db.js";
 
-/** Where one input field of a step comes from: the buyer's request, a fixed value, or an earlier step's output. */
-export type Source = { from: "buyer"; field: string } | { from: "fixed"; value: unknown } | { from: "step"; step: number; field: string };
+/**
+ * Where one input field of a step comes from: the buyer's request, a fixed value, or an earlier step's output.
+ * `fallback` is what a step-sourced field gets when that earlier step was skipped.
+ */
+export type Source = { from: "buyer"; field: string } | { from: "fixed"; value: unknown } | { from: "step"; step: number; field: string; fallback?: unknown };
+
+/** When to leave a step out: looks at a buyer field or an earlier step's output ("empty" = missing, null, "", [] or {}). */
+export interface SkipIf {
+  when: { from: "buyer"; field: string } | { from: "step"; step: number; field: string };
+  test: "empty" | "not_empty" | "equals";
+  /** What `equals` compares with. */
+  value?: unknown;
+}
 
 export interface ChainStep {
   serviceId: string;
   input: Record<string, Source>;
+  /** Skip this step (and its payment) when the condition holds. */
+  skipIf?: SkipIf;
   /** canonical([category, inputSchema, outputSchema]) of the chosen seller when the chain was saved: any verified seller with the same key can stand in. */
   key: string;
 }

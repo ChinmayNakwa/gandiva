@@ -7,12 +7,13 @@ import { buyFrom, Ctx, type PayFn, type RunState } from "../buyer/purchase.js";
 import { resolveRef } from "../buyer/refs.js";
 import { config, fromUnits, MAX_PRICE_UNITS } from "../config.js";
 import { secretsConfigured } from "../crypto/secrets.js";
+import { getHosted } from "../hosted/agents.js";
 import { getService, registerForWallet, searchServices, slug, walletOwner, type Category, type Service, type ServiceWithReputation } from "../registry/store.js";
 import { BRIEF_ID, briefOutput } from "../sellers/brief.js";
 import { BudgetLedger } from "../x402/budget.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
 import { validate, validateInput } from "../x402/schema.js";
-import { addChainRun, chainStats, getChain, isChainService, listChainsByOwner, settleFailures, upsertChain, type Chain, type ChainStats, type ChainStep, type Source } from "./store.js";
+import { addChainRun, chainStats, getChain, isChainService, listChainsByOwner, settleFailures, upsertChain, type Chain, type ChainStats, type ChainStep, type SkipIf, type Source } from "./store.js";
 
 export const MIN_STEPS = 2;
 export const MAX_STEPS = 3;
@@ -34,13 +35,20 @@ export class ChainError extends Error {
 // ---- the form -------------------------------------------------------------------------------------------------------
 
 const units = z.string().regex(/^\d+$/, "amounts are in USDC smallest units (6 decimals)");
+const buyerSource = z.object({ from: z.literal("buyer"), field: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, "a buyer field name uses lower-case letters, digits and _ and starts with a letter") });
+const stepRef = { step: z.number().int().min(1).max(MAX_STEPS), field: z.string().min(1).max(80) };
 const source = z.discriminatedUnion("from", [
-  z.object({ from: z.literal("buyer"), field: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, "a buyer field name uses lower-case letters, digits and _ and starts with a letter") }),
+  buyerSource,
   z.object({ from: z.literal("fixed"), value: z.unknown() }),
-  z.object({ from: z.literal("step"), step: z.number().int().min(1).max(MAX_STEPS), field: z.string().min(1).max(80) }),
+  z.object({ from: z.literal("step"), ...stepRef, fallback: z.unknown().optional() }),
 ]);
+const skipIf = z.object({
+  when: z.discriminatedUnion("from", [buyerSource, z.object({ from: z.literal("step"), ...stepRef })]),
+  test: z.enum(["empty", "not_empty", "equals"]),
+  value: z.unknown().optional(),
+});
 const steps = z
-  .array(z.object({ serviceId: z.string().min(1).max(64), input: z.record(z.string().min(1).max(80), source) }))
+  .array(z.object({ serviceId: z.string().min(1).max(64), input: z.record(z.string().min(1).max(80), source), skipIf: skipIf.optional() }))
   .min(MIN_STEPS, `a chain needs at least ${MIN_STEPS} steps`)
   .max(MAX_STEPS, `a chain can have at most ${MAX_STEPS} steps`);
 const price = units.refine((p) => BigInt(p) > 0n && BigInt(p) <= MAX_PRICE_UNITS, "price must be > 0 and <= 100000 (0.10 USDC)");
@@ -90,15 +98,24 @@ export interface ChainPlan {
   category: Category;
   inputSchema: Schema;
   outputSchema: Schema;
-  /** What one request costs at the chosen sellers' current prices. */
+  /** What one request costs at the chosen sellers' current prices, when no step is skipped. */
   cost: bigint;
+  /** What it costs when every skippable step is skipped. */
+  minCost: bigint;
 }
 
 const keyOf = (s: Service) => canonical([s.category, s.inputSchema, s.outputSchema]);
 const isChainLike = (id: string) => id === BRIEF_ID || isChainService(id);
 
+/** What a listing is, for the Marketplace tag: a chain hires and pays other sellers, an AI agent is a hosted LLM seller, the rest are data APIs. */
+export type Kind = "chain" | "agent" | "data";
+export function kindOf(serviceId: string): Kind {
+  if (serviceId === BRIEF_ID || isChainService(serviceId)) return "chain";
+  return getHosted(serviceId) ? "agent" : "data";
+}
+
 /** Checks the steps against the live registry and builds the chain's own input and output schemas. Throws ChainError. */
-export function planChain(form: { steps: { serviceId: string; input: Record<string, Source> }[]; subBudget: string; price: string }, self?: string, lookup: (id: string) => Service | undefined = getService): ChainPlan {
+export function planChain(form: { steps: { serviceId: string; input: Record<string, Source>; skipIf?: SkipIf }[]; subBudget: string; price: string }, self?: string, lookup: (id: string) => Service | undefined = getService): ChainPlan {
   const services: Service[] = [];
   const buyer = new Map<string, { schema: Schema; required: boolean }>();
   for (const [i, step] of form.steps.entries()) {
@@ -130,6 +147,15 @@ export function planChain(form: { steps: { serviceId: string; input: Record<stri
         if (!fit(out[src.field], tgt)) {
           throw new ChainError(`step ${n}: step ${src.step}'s "${src.field}" (${[...(typesOf(out[src.field]) ?? [])].join("/")}) cannot fill ${svc.name}'s "${field}" (${[...(typesOf(tgt) ?? [])].join("/")})`);
         }
+        if (form.steps[src.step - 1].skipIf) {
+          // That earlier step may be skipped, and then there is nothing to read: say what this field gets instead.
+          if (src.fallback !== undefined) {
+            const v = validate(tgt ?? {}, wantsList(tgt) && !Array.isArray(src.fallback) ? [src.fallback] : src.fallback);
+            if (!v.ok) throw new ChainError(`step ${n}: the fallback for "${field}" is not valid (${v.error})`);
+          } else if (requiredOf(svc.inputSchema).includes(field)) {
+            throw new ChainError(`step ${n}: step ${src.step} can be skipped, so give "${field}" a fallback value for when it is`);
+          }
+        }
       } else {
         const schema = tgt ?? {};
         const seen = buyer.get(src.field);
@@ -140,7 +166,24 @@ export function planChain(form: { steps: { serviceId: string; input: Record<stri
     services.push(svc);
   }
 
+  for (const [i, step] of form.steps.entries()) {
+    const n = i + 1;
+    const c = step.skipIf;
+    if (!c) continue;
+    const name = services[i].name;
+    if (n === form.steps.length) throw new ChainError(`step ${n} (${name}) is the last step, so it cannot be skipped: the chain's answer comes from it`);
+    if (c.when.from === "buyer") {
+      if (!buyer.has(c.when.field)) throw new ChainError(`step ${n}: the skip condition uses the buyer field "${c.when.field}", but no step takes it from the buyer`);
+    } else {
+      if (c.when.step >= n) throw new ChainError(`step ${n}: the skip condition can only look at an earlier step`);
+      const prev = services[c.when.step - 1];
+      if (!(c.when.field in props(prev.outputSchema))) throw new ChainError(`step ${n}: the skip condition uses "${c.when.field}", which step ${c.when.step} (${prev.name}) does not return`);
+    }
+    if (c.test === "equals" && c.value === undefined) throw new ChainError(`step ${n}: give the value the skip condition compares with`);
+  }
+
   const cost = services.reduce((sum, s) => sum + BigInt(s.price), 0n);
+  const minCost = services.reduce((sum, s, i) => (form.steps[i].skipIf ? sum : sum + BigInt(s.price)), 0n);
   const subBudget = BigInt(form.subBudget);
   if (subBudget < cost) throw new ChainError(`the steps cost ${fromUnits(cost)} USDC per call at today's prices; the sub-budget (${fromUnits(subBudget)}) must cover that`);
   if (subBudget > BigInt(form.price)) throw new ChainError(`the sub-budget (${fromUnits(subBudget)} USDC) must not be more than your price (${fromUnits(form.price)}), or a call could lose you money`);
@@ -160,19 +203,20 @@ export function planChain(form: { steps: { serviceId: string; input: Record<stri
       steps: {
         type: "array",
         description: "What each hired seller returned, in order",
-        items: { type: "object", required: ["service", "output"], properties: { service: { type: "string" }, output: {} } },
+        items: { type: "object", required: ["service", "output"], properties: { service: { type: "string" }, output: {}, skipped: { type: "boolean", description: "true when the skip condition held and this step was not bought" } } },
       },
       hired: briefOutput.properties.hired,
       cost_units: briefOutput.properties.cost_units,
     },
   };
   return {
-    steps: form.steps.map((s, i) => ({ serviceId: s.serviceId, input: s.input, key: keyOf(services[i]) })),
+    steps: form.steps.map((s, i) => ({ serviceId: s.serviceId, input: s.input, ...(s.skipIf ? { skipIf: s.skipIf } : {}), key: keyOf(services[i]) })),
     services,
     category: last.category,
     inputSchema,
     outputSchema,
     cost,
+    minCost,
   };
 }
 
@@ -237,6 +281,38 @@ export interface RunContext {
   tally?: { cost: bigint; stepsPaid: number; stepsCached: number };
 }
 
+/** Missing, null, blank text, an empty list or an empty object. (0 and false are real values.) */
+export function isEmpty(v: unknown): boolean {
+  if (v === undefined || v === null) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v as object).length === 0;
+  return false;
+}
+
+/** Does this step's skip condition hold? A field that is not there (for example from a step that was itself skipped) counts as empty. */
+export function shouldSkip(c: SkipIf, results: Map<string, unknown>): boolean {
+  let v: unknown;
+  if (c.when.from === "buyer") v = (results.get("in") as Record<string, unknown>)[c.when.field];
+  else {
+    try {
+      v = results.has(`s${c.when.step}`) ? resolveRef(`$s${c.when.step}.${c.when.field}`, results) : undefined;
+    } catch {
+      v = undefined;
+    }
+  }
+  if (c.test === "empty") return isEmpty(v);
+  if (c.test === "not_empty") return !isEmpty(v);
+  return same(v, c.value);
+}
+
+/** Plain values match by their text ("5" equals 5), so a number typed into the Sell tab matches a number field; lists and objects match exactly. */
+const same = (a: unknown, b: unknown) => {
+  const plain = (x: unknown) => x === null || typeof x !== "object";
+  if (a === undefined) return false;
+  return plain(a) && plain(b) ? String(a) === String(b) : canonical(a) === canonical(b);
+};
+
 /** The input for one step, built from the buyer's request, fixed values and earlier outputs. */
 function stepInput(step: ChainStep, results: Map<string, unknown>, target: Schema): Record<string, unknown> {
   const fields = props(target);
@@ -244,8 +320,13 @@ function stepInput(step: ChainStep, results: Map<string, unknown>, target: Schem
   for (const [field, src] of Object.entries(step.input)) {
     let value: unknown;
     if (src.from === "fixed") value = src.value;
-    else if (src.from === "step") value = resolveRef(`$s${src.step}.${src.field}`, results as Map<string, unknown>);
-    else {
+    else if (src.from === "step") {
+      if (!results.has(`s${src.step}`)) {
+        // That step was skipped: use the seller's fallback, or leave an optional field out.
+        if (src.fallback === undefined) continue;
+        value = src.fallback;
+      } else value = resolveRef(`$s${src.step}.${src.field}`, results as Map<string, unknown>);
+    } else {
       const given = results.get("in") as Record<string, unknown>;
       if (!(src.field in given)) continue; // an optional buyer field that was left out
       value = given[src.field];
@@ -310,7 +391,7 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
     const ctx = new Ctx(run, new BudgetLedger(chain.subBudget), 1, deps.pay);
     const all = deps.services();
     const results = new Map<string, unknown>([["in", input]]);
-    const outputs: { service: string; output: unknown }[] = [];
+    const outputs: { service: string; output: unknown; skipped?: boolean }[] = [];
     const hired: { service: string; category: string; status: string; paid: string; tx_hash?: string }[] = [];
     const keys: string[] = [];
     const isPaid = (p: { status: string }) => p.status === "paid" || p.status === "paid_output_rejected";
@@ -324,6 +405,11 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
 
     for (const [i, step] of chain.steps.entries()) {
       const n = i + 1;
+      if (step.skipIf && shouldSkip(step.skipIf, results)) {
+        // Not bought and not paid; later steps see no result for it and use their fallbacks.
+        outputs.push({ service: step.serviceId, output: null, skipped: true });
+        continue;
+      }
       const key = opts.payer ? cacheKey(chain, opts.payer, input, step, n) : undefined;
       if (key) keys.push(key);
       const hit = key ? cacheGet(key) : undefined;
@@ -487,8 +573,9 @@ export async function quoteChain(raw: unknown, wallet: string) {
   }
   const subBudget = BigInt(f.subBudget);
   return {
-    steps: plan.services.map((s) => ({ serviceId: s.id, name: s.name, category: s.category, price: s.price })),
+    steps: plan.services.map((s, i) => ({ serviceId: s.id, name: s.name, category: s.category, price: s.price, skippable: Boolean(f.steps[i].skipIf) })),
     cost: plan.cost.toString(),
+    minCost: plan.minCost.toString(),
     subBudget: subBudget.toString(),
     price: f.price,
     margin: (BigInt(f.price) - plan.cost).toString(),
@@ -535,7 +622,7 @@ export function listChainsFor(wallet: string): Record<string, { steps: Omit<Chai
   return Object.fromEntries(
     listChainsByOwner(wallet).map((c) => [
       c.serviceId,
-      { steps: c.steps.map(({ serviceId, input }) => ({ serviceId, input })), subBudget: c.subBudget.toString(), hires: c.steps.map((s) => s.serviceId), stats: chainStats(c.serviceId) },
+      { steps: c.steps.map(({ serviceId, input, skipIf }) => ({ serviceId, input, ...(skipIf ? { skipIf } : {}) })), subBudget: c.subBudget.toString(), hires: c.steps.map((s) => s.serviceId), stats: chainStats(c.serviceId) },
     ]),
   );
 }
