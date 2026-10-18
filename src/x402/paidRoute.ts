@@ -25,7 +25,8 @@ export interface PaidRouteOptions<I, O> {
   timeoutMs?: number;
   /** Honest sellers check their own output before settling. Demo "junk" sellers turn this off. */
   selfValidate?: boolean;
-  handler: (input: I) => Promise<O>;
+  /** `info.payer` is who signed the payment (not yet settled): for sellers that spend money before they get paid. */
+  handler: (input: I, info: { payer?: string }) => Promise<O>;
 }
 
 const claimNonce = db.prepare("INSERT INTO nonces (key, seller, status) VALUES (?, ?, 'pending') ON CONFLICT(key) DO NOTHING");
@@ -134,7 +135,7 @@ export function paidRoute<I = any, O = any>(opts: PaidRouteOptions<I, O>) {
 
     let output: O;
     try {
-      output = await withTimeout(opts.handler(input as I), timeoutMs);
+      output = await withTimeout(opts.handler(input as I, { payer }), timeoutMs);
     } catch (err: any) {
       const status = err instanceof ServiceError ? err.status : 502;
       return fail(status, short(`service failed, not charged: ${err?.message ?? String(err)}`));

@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS chain_sellers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- One row per request a chain handled (or per owner test run): what it paid its suppliers and what the sale brought in.
+CREATE TABLE IF NOT EXISTS chain_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  service_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payer TEXT,
+  outcome TEXT NOT NULL,
+  steps_paid INTEGER NOT NULL DEFAULT 0,
+  steps_cached INTEGER NOT NULL DEFAULT 0,
+  cost_units TEXT NOT NULL DEFAULT '0',
+  earned_units TEXT NOT NULL DEFAULT '0',
+  error TEXT,
+  latency_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chain_runs_service ON chain_runs (service_id, id);
+
 -- Money the user took back out of their agent wallet (outgoing transfers that are not payments to sellers; reconcile subtracts them).
 CREATE TABLE IF NOT EXISTS withdrawals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

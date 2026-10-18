@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { z } from "zod";
 import { AgentWalletError, ensureAgentWallet, getAgentPayer, usdcBalance } from "../agents/wallet.js";
@@ -12,7 +12,7 @@ import { BRIEF_ID, briefOutput } from "../sellers/brief.js";
 import { BudgetLedger } from "../x402/budget.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
 import { validate, validateInput } from "../x402/schema.js";
-import { getChain, isChainService, listChainsByOwner, upsertChain, type Chain, type ChainStep, type Source } from "./store.js";
+import { addChainRun, chainStats, getChain, isChainService, listChainsByOwner, settleFailures, upsertChain, type Chain, type ChainStats, type ChainStep, type Source } from "./store.js";
 
 export const MIN_STEPS = 2;
 export const MAX_STEPS = 3;
@@ -184,11 +184,58 @@ export interface ChainDeps {
   address: string;
   /** USDC held by the paying wallet, in units. */
   balance: () => Promise<bigint>;
+  /** USDC held by any wallet (the buyer's), in units. Without it the buyer's balance is not checked. */
+  payerBalance?: (address: string) => Promise<bigint>;
   /** All registry services, best-ranked first. */
   services: () => ServiceWithReputation[];
 }
 
 const inflight = new Map<string, number>();
+
+/** A chain pays its suppliers before the buyer's payment settles, so a payer whose payments keep failing to settle is refused. */
+export const MAX_STRIKES = 3;
+export const STRIKE_WINDOW_MS = 3_600_000;
+
+/** What a failed request already paid for is kept briefly, so the same buyer retrying the same request does not pay those suppliers twice. */
+export const CACHE_TTL_MS = 600_000;
+const CACHE_MAX = 200;
+interface CachedStep {
+  at: number;
+  service: string;
+  category: string;
+  data: unknown;
+}
+const stepCache = new Map<string, CachedStep>();
+
+const cacheKey = (chain: Chain, payer: string, input: Record<string, unknown>, step: ChainStep, n: number) =>
+  `${payer.toLowerCase()}|${chain.serviceId}|${n}|${createHash("sha256").update(canonical([input, step])).digest("hex")}`;
+
+function cacheGet(key: string, now = Date.now()): CachedStep | undefined {
+  const hit = stepCache.get(key);
+  if (hit && now - hit.at >= CACHE_TTL_MS) {
+    stepCache.delete(key);
+    return undefined;
+  }
+  return hit;
+}
+
+function cachePut(key: string, value: CachedStep) {
+  stepCache.delete(key);
+  stepCache.set(key, value);
+  while (stepCache.size > CACHE_MAX) stepCache.delete(stepCache.keys().next().value as string);
+}
+
+/** Test hook. */
+export const clearStepCache = () => stepCache.clear();
+
+/** Who is buying, and a place for runChain to report what it spent (kept up to date even when it throws). */
+export interface RunContext {
+  /** The buyer's wallet (from the signed, not yet settled, payment). Absent for the owner's test run. */
+  payer?: string;
+  /** The chain's price, in USDC units. */
+  price?: bigint;
+  tally?: { cost: bigint; stepsPaid: number; stepsCached: number };
+}
 
 /** The input for one step, built from the buyer's request, fixed values and earlier outputs. */
 function stepInput(step: ChainStep, results: Map<string, unknown>, target: Schema): Record<string, unknown> {
@@ -213,11 +260,20 @@ function stepInput(step: ChainStep, results: Map<string, unknown>, target: Schem
  * check, budget and spend cap as Scout. A seller that misbehaves is swapped for a verified one doing the same job. Anything
  * that fails throws ServiceError before the buyer's payment settles, so the buyer is only charged for a finished job.
  */
-export async function runChain(chain: Chain, input: Record<string, unknown>, deps: ChainDeps) {
+export async function runChain(chain: Chain, input: Record<string, unknown>, deps: ChainDeps, opts: RunContext = {}) {
   const busy = inflight.get(chain.serviceId) ?? 0;
   if (busy >= MAX_CONCURRENT) throw new ServiceError(`this chain is already handling ${MAX_CONCURRENT} requests; try again in a moment`, 503);
   inflight.set(chain.serviceId, busy + 1);
+  let run: RunState | undefined;
+  let cachedSteps = 0;
   try {
+    if (opts.payer) {
+      const strikes = settleFailures(chain.serviceId, opts.payer, new Date(Date.now() - STRIKE_WINDOW_MS).toISOString());
+      if (strikes >= MAX_STRIKES) {
+        throw new ServiceError(`payments from ${opts.payer} failed to settle ${strikes} times in the last hour, so this chain will not start work for that wallet until that clears`, 429);
+      }
+    }
+
     let held: bigint;
     try {
       held = await deps.balance();
@@ -227,7 +283,18 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
     const needed = chain.subBudget * BigInt(busy + 1);
     if (held < needed) throw new ServiceError(`this chain is out of float (${deps.address} holds ${fromUnits(held)} USDC, needs ${fromUnits(needed)}); its owner must add funds`, 503);
 
-    const run = {
+    // The chain pays its suppliers first and is paid when the buyer's payment settles: do not start for a wallet that cannot pay.
+    if (opts.payer && opts.price !== undefined && deps.payerBalance) {
+      let theirs: bigint;
+      try {
+        theirs = await deps.payerBalance(opts.payer);
+      } catch (err: any) {
+        throw new ServiceError(`cannot check the paying wallet's balance: ${err?.message ?? err}`, 503);
+      }
+      if (theirs < opts.price) throw new ServiceError(`the paying wallet holds ${fromUnits(theirs)} USDC but this chain costs ${fromUnits(opts.price)}; nothing was started`, 400);
+    }
+
+    run = {
       id: `chain-${randomUUID().slice(0, 8)}`,
       task: `agent chain ${chain.serviceId}`,
       budget: chain.subBudget.toString(),
@@ -244,9 +311,31 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
     const all = deps.services();
     const results = new Map<string, unknown>([["in", input]]);
     const outputs: { service: string; output: unknown }[] = [];
+    const hired: { service: string; category: string; status: string; paid: string; tx_hash?: string }[] = [];
+    const keys: string[] = [];
+    const isPaid = (p: { status: string }) => p.status === "paid" || p.status === "paid_output_rejected";
+    const tally = () => {
+      if (!opts.tally || !run) return;
+      const paid = run.purchases.filter(isPaid);
+      opts.tally.cost = paid.reduce((sum, p) => sum + BigInt(p.paid), 0n);
+      opts.tally.stepsPaid = paid.length;
+      opts.tally.stepsCached = cachedSteps;
+    };
 
     for (const [i, step] of chain.steps.entries()) {
       const n = i + 1;
+      const key = opts.payer ? cacheKey(chain, opts.payer, input, step, n) : undefined;
+      if (key) keys.push(key);
+      const hit = key ? cacheGet(key) : undefined;
+      if (hit) {
+        // Paid for by an earlier request of this same buyer that did not finish: no second payment to the supplier.
+        results.set(`s${n}`, hit.data);
+        outputs.push({ service: hit.service, output: hit.data });
+        hired.push({ service: hit.service, category: hit.category, status: "cached", paid: "0" });
+        cachedSteps++;
+        tally();
+        continue;
+      }
       const ranked = all.filter((s) => s.verification === "verified" && s.id !== chain.serviceId && !isChainLike(s.id) && keyOf(s) === step.key);
       if (!ranked.length) throw new ServiceError(`step ${n}: no verified seller for ${step.serviceId}'s job is listed right now`, 503);
       let callInput: Record<string, unknown>;
@@ -259,18 +348,24 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
       if (!ok.ok) throw new ServiceError(`step ${n}: its input would be rejected by the seller (${ok.error})`, 502);
       const pool = `chain:${chain.serviceId}:${n}`;
       if (ranked.some((s) => s.id === step.serviceId)) ctx.preferred.set(pool, step.serviceId);
+      const before = run.purchases.length;
       const out = await buyFrom(ctx, pool, ranked, `step ${n}`, callInput);
+      tally();
       if (out.data === undefined) throw new ServiceError(`step ${n} failed: ${out.lastReason ?? out.stop ?? "no seller delivered"}`, 502);
       results.set(`s${n}`, out.data);
       outputs.push({ service: out.service ?? step.serviceId, output: out.data });
+      const mine = run.purchases.slice(before).filter(isPaid);
+      for (const p of mine) hired.push({ service: p.service, category: p.category, status: p.status, paid: p.paid, ...(p.txHash ? { tx_hash: p.txHash } : {}) });
+      if (key) cachePut(key, { at: Date.now(), service: out.service ?? step.serviceId, category: mine[mine.length - 1]?.category ?? ranked[0].category, data: out.data });
     }
 
-    const paid = run.purchases.filter((p) => p.status === "paid" || p.status === "paid_output_rejected");
+    // Delivered: the buyer gets this answer, so a later identical request is a new job and pays its suppliers afresh.
+    for (const k of keys) stepCache.delete(k);
     return {
       result: outputs[outputs.length - 1].output,
       steps: outputs,
-      hired: paid.map((p) => ({ service: p.service, category: p.category, status: p.status, paid: p.paid, ...(p.txHash ? { tx_hash: p.txHash } : {}) })),
-      cost_units: paid.reduce((sum, p) => sum + BigInt(p.paid), 0n).toString(),
+      hired,
+      cost_units: run.purchases.filter(isPaid).reduce((sum, p) => sum + BigInt(p.paid), 0n).toString(),
     };
   } finally {
     const left = (inflight.get(chain.serviceId) ?? 1) - 1;
@@ -287,7 +382,7 @@ function agentDeps(owner: string): ChainDeps {
   } catch (err: any) {
     throw new ServiceError(`the chain's wallet is not available: ${err?.message ?? err}`, 503);
   }
-  return { pay: (...args) => payer.call(...args), address: payer.address, balance: () => usdcBalance(payer.address), services: () => searchServices() };
+  return { pay: (...args) => payer.call(...args), address: payer.address, balance: () => usdcBalance(payer.address), payerBalance: usdcBalance, services: () => searchServices() };
 }
 
 /** POST /sellers/c/:id/run: the paid x402 route of one chain, built from its stored steps on every request. */
@@ -296,17 +391,47 @@ export async function chainRoute(c: Context) {
   const service = getService(id);
   const chain = getChain(id);
   if (!service || !chain || service.owner !== walletOwner(chain.owner)) return c.json({ error: "no such agent chain" }, 404);
+  const price = BigInt(service.price);
+  const tally = { cost: 0n, stepsPaid: 0, stepsCached: 0 };
+  let payer: string | undefined;
+  let failure: string | undefined;
   const route = paidRoute<Record<string, unknown>, unknown>({
     seller: id,
     description: service.description,
-    price: BigInt(service.price),
+    price,
     payTo: service.payTo,
     inputSchema: service.inputSchema,
     outputSchema: service.outputSchema,
     timeoutMs: CHAIN_TIMEOUT_MS,
-    handler: async (input) => runChain(chain, input, agentDeps(chain.owner)),
+    handler: async (input, info) => {
+      payer = info.payer;
+      try {
+        return await runChain(chain, input, agentDeps(chain.owner), { payer: info.payer, price, tally });
+      } catch (err: any) {
+        failure = err?.message ?? String(err);
+        throw err;
+      }
+    },
   });
-  return route(c);
+  const started = Date.now();
+  const res = await route(c);
+  // Only requests that got as far as running the handler have a payer; a 402 challenge or a replay is not a request to record.
+  if (payer !== undefined || failure !== undefined || tally.stepsPaid > 0) {
+    const settled = res.status === 200;
+    addChainRun({
+      serviceId: id,
+      kind: "sale",
+      payer,
+      outcome: settled ? "ok" : "failed",
+      stepsPaid: tally.stepsPaid,
+      stepsCached: tally.stepsCached,
+      cost: tally.cost,
+      earned: settled ? price : 0n,
+      error: settled ? undefined : (failure ?? `payment did not settle (HTTP ${res.status})`),
+      latencyMs: Date.now() - started,
+    });
+  }
+  return res;
 }
 
 // ---- the Sell tab ---------------------------------------------------------------------------------------------------
@@ -389,19 +514,29 @@ export async function testChain(raw: unknown, wallet: string, now = Date.now(), 
   agentWalletOf(wallet);
   testLog.set(wallet, [...recent, now]);
   const started = Date.now();
+  const tally = { cost: 0n, stepsPaid: 0, stepsCached: 0 };
+  // A test of a chain that is already listed counts in that chain's history (as cost only); a draft has nowhere to keep it.
+  const saved = f.id && getChain(f.id)?.owner === wallet.toLowerCase() ? f.id : undefined;
+  const record = (outcome: "ok" | "failed", error?: string) =>
+    saved && addChainRun({ serviceId: saved, kind: "test", outcome, stepsPaid: tally.stepsPaid, stepsCached: 0, cost: tally.cost, earned: 0n, error, latencyMs: Date.now() - started });
   try {
-    const output = await runChain({ serviceId: f.id ?? `test-${wallet.toLowerCase()}`, owner: wallet, steps: plan.steps, subBudget: BigInt(f.subBudget) }, f.input, deps ?? agentDeps(wallet));
+    const output = await runChain({ serviceId: f.id ?? `test-${wallet.toLowerCase()}`, owner: wallet, steps: plan.steps, subBudget: BigInt(f.subBudget) }, f.input, deps ?? agentDeps(wallet), { tally });
+    record("ok");
     return { output, ms: Date.now() - started };
   } catch (err) {
+    record("failed", (err as Error)?.message);
     if (err instanceof ServiceError) throw new ChainError(err.message, 502);
     throw err;
   }
 }
 
 /** What the Sell tab may show about a wallet's chains. */
-export function listChainsFor(wallet: string): Record<string, { steps: Omit<ChainStep, "key">[]; subBudget: string; hires: string[] }> {
+export function listChainsFor(wallet: string): Record<string, { steps: Omit<ChainStep, "key">[]; subBudget: string; hires: string[]; stats: ChainStats }> {
   return Object.fromEntries(
-    listChainsByOwner(wallet).map((c) => [c.serviceId, { steps: c.steps.map(({ serviceId, input }) => ({ serviceId, input })), subBudget: c.subBudget.toString(), hires: c.steps.map((s) => s.serviceId) }]),
+    listChainsByOwner(wallet).map((c) => [
+      c.serviceId,
+      { steps: c.steps.map(({ serviceId, input }) => ({ serviceId, input })), subBudget: c.subBudget.toString(), hires: c.steps.map((s) => s.serviceId), stats: chainStats(c.serviceId) },
+    ]),
   );
 }
 
