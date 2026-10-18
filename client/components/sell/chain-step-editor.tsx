@@ -1,12 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { usdc } from "@/lib/format";
-import type { ChainSource, ChainStepForm, JsonSchema, Service } from "@/lib/types";
+import { KIND_LABEL, usdc } from "@/lib/format";
+import type { ChainSkipIf, ChainSource, ChainStepForm, JsonSchema, Service } from "@/lib/types";
 
 type Schema = JsonSchema;
 
@@ -56,7 +57,9 @@ export function parseValue(text: string, schema: Schema | undefined): unknown {
 export const showValue = (v: unknown) => (Array.isArray(v) ? v.join(", ") : v === undefined || v === null ? "" : String(v));
 
 /** A buyer field name made from an input field name (the server allows a-z, 0-9 and _). */
-export const fieldName = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^[^a-z]+/, "").slice(0, 40) || "value";
+export const typedFieldName = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^[^a-z]+/, "").slice(0, 40);
+/** The same, with a default for when nothing usable is left (used when a name is made for the seller, not while typing). */
+export const fieldName = (s: string) => typedFieldName(s) || "value";
 
 /** Where each field comes from when a seller is first picked: an earlier output with the same name, else the buyer. */
 export function defaultInput(svc: Service, earlier: (Service | undefined)[]): Record<string, ChainSource> {
@@ -71,10 +74,122 @@ export function defaultInput(svc: Service, earlier: (Service | undefined)[]): Re
 
 const encode = (src: ChainSource | undefined) => (!src ? "none" : src.from === "step" ? `step:${src.step}:${src.field}` : src.from);
 
+/**
+ * A box for a typed value. It keeps what was typed (spaces included) and only reports it upwards: a list value is split at commas
+ * and trimmed, and showing that back would eat the space typed after a word.
+ */
+function TypedInput({ id, initial, placeholder, onText }: { id: string; initial: string; placeholder: string; onText: (text: string) => void }) {
+  const [text, setText] = useState(initial);
+  return (
+    <Input
+      id={id}
+      className="font-mono"
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setText(e.target.value);
+        onText(e.target.value);
+      }}
+    />
+  );
+}
+
+const TESTS: { value: ChainSkipIf["test"]; label: string }[] = [
+  { value: "empty", label: "is empty" },
+  { value: "not_empty", label: "is not empty" },
+  { value: "equals", label: "equals" },
+];
+
+/** "Skip this step when …": looks at a buyer field or an earlier step's output. */
+function SkipRow({
+  index,
+  skipIf,
+  earlier,
+  buyerFields,
+  onChange,
+}: {
+  index: number;
+  skipIf: ChainSkipIf | undefined;
+  earlier: (Service | undefined)[];
+  buyerFields: string[];
+  onChange: (c: ChainSkipIf | undefined) => void;
+}) {
+  const choices = [
+    ...buyerFields.map((f) => ({ value: `buyer:${f}`, label: `Buyer's ${f}` })),
+    ...earlier.flatMap((e, k) => (e ? Object.keys(props(e.outputSchema)).map((f) => ({ value: `step:${k + 1}:${f}`, label: `Step ${k + 1} (${e.name}) → ${f}` })) : [])),
+  ];
+  const encodeWhen = (w: ChainSkipIf["when"]) => (w.from === "buyer" ? `buyer:${w.field}` : `step:${w.step}:${w.field}`);
+  const decodeWhen = (v: string): ChainSkipIf["when"] => {
+    const [kind, a, b] = v.split(":");
+    return kind === "buyer" ? { from: "buyer", field: a } : { from: "step", step: Number(a), field: b };
+  };
+  const id = `skip-${index}`;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-dashed border-border/70 p-2">
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type="checkbox"
+          className="size-4 accent-primary"
+          checked={Boolean(skipIf)}
+          disabled={!choices.length}
+          onChange={(e) => onChange(e.target.checked && choices.length ? { when: decodeWhen(choices[0].value), test: "empty" } : undefined)}
+        />
+        <Label htmlFor={id} className="text-xs">
+          Skip this step under a condition (it is then not bought or paid for)
+        </Label>
+      </div>
+      {!choices.length ? <p className="text-[11px] text-muted-foreground">There is nothing to test yet: pick a seller in an earlier step, or let the buyer provide a field.</p> : null}
+      {skipIf ? (
+        <div className="grid gap-2 sm:grid-cols-[1fr_9rem_1fr] sm:items-center">
+          <Select value={encodeWhen(skipIf.when)} onValueChange={(v) => onChange({ ...skipIf, when: decodeWhen(v) })}>
+            <SelectTrigger aria-label={`What step ${index + 1}'s skip condition looks at`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {choices.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={skipIf.test} onValueChange={(v) => onChange({ ...skipIf, test: v as ChainSkipIf["test"] })}>
+            <SelectTrigger aria-label={`How step ${index + 1}'s skip condition tests it`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TESTS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {skipIf.test === "equals" ? (
+            <>
+              <Label htmlFor={`${id}-value`} className="sr-only">
+                Value the skip condition compares with
+              </Label>
+              <Input id={`${id}-value`} className="font-mono" placeholder="value" value={showValue(skipIf.value)} onChange={(e) => onChange({ ...skipIf, value: e.target.value })} />
+            </>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">Empty means missing, blank, or an empty list. 0 and false are real values.</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ChainStepEditor({
   index,
   step,
   earlier,
+  skippable,
+  buyerFields,
+  canSkip,
   services,
   onChange,
   onRemove,
@@ -83,6 +198,12 @@ export function ChainStepEditor({
   step: ChainStepForm;
   /** The services chosen in the steps before this one (their outputs can feed this step). */
   earlier: (Service | undefined)[];
+  /** Which of those earlier steps can be skipped (what they would have given needs a fallback). */
+  skippable: boolean[];
+  /** Fields the buyer provides, as named in the steps. */
+  buyerFields: string[];
+  /** The last step cannot be skipped: the chain's answer comes from it. */
+  canSkip: boolean;
   /** Sellers a chain may hire: verified, not chains. */
   services: Service[];
   onChange: (s: ChainStepForm) => void;
@@ -124,7 +245,8 @@ export function ChainStepEditor({
           <SelectContent>
             {services.map((s) => (
               <SelectItem key={s.id} value={s.id}>
-                {s.name} · {s.category} · {usdc(s.price)} USDC
+                {s.name} · {s.kind ? `${KIND_LABEL[s.kind]} · ` : ""}
+                {s.category} · {usdc(s.price)} USDC
               </SelectItem>
             ))}
           </SelectContent>
@@ -179,19 +301,32 @@ export function ChainStepEditor({
                         <Label htmlFor={`f-${index}-${field}`} className="sr-only">
                           Buyer field name for {field}
                         </Label>
-                        <Input id={`f-${index}-${field}`} className="font-mono" value={src.field} onChange={(e) => setSource(field, { from: "buyer", field: fieldName(e.target.value) })} />
+                        <Input id={`f-${index}-${field}`} className="font-mono" value={src.field} onChange={(e) => setSource(field, { from: "buyer", field: typedFieldName(e.target.value) })} />
                       </div>
                     ) : src?.from === "fixed" ? (
                       <div className="flex flex-col gap-0.5">
                         <Label htmlFor={`f-${index}-${field}`} className="sr-only">
                           Fixed value for {field}
                         </Label>
-                        <Input
+                        <TypedInput
+                          key="fixed"
                           id={`f-${index}-${field}`}
-                          className="font-mono"
-                          value={showValue(src.value)}
+                          initial={showValue(src.value)}
                           placeholder={typesOf(schema)?.has("array") ? "comma, separated" : "value"}
-                          onChange={(e) => setSource(field, { from: "fixed", value: parseValue(e.target.value, schema) })}
+                          onText={(text) => setSource(field, { from: "fixed", value: parseValue(text, schema) })}
+                        />
+                      </div>
+                    ) : src?.from === "step" && skippable[src.step - 1] ? (
+                      <div className="flex flex-col gap-0.5">
+                        <Label htmlFor={`f-${index}-${field}`} className="text-[10px] text-muted-foreground">
+                          If step {src.step} is skipped, use{required.includes(field) ? "" : " (blank = not sent)"}
+                        </Label>
+                        <TypedInput
+                          key={`fallback-${src.step}`}
+                          id={`f-${index}-${field}`}
+                          initial={showValue(src.fallback)}
+                          placeholder={typesOf(schema)?.has("array") ? "comma, separated" : "value"}
+                          onText={(text) => setSource(field, { ...src, fallback: text.trim() === "" ? undefined : parseValue(text, schema) })}
                         />
                       </div>
                     ) : (
@@ -204,6 +339,7 @@ export function ChainStepEditor({
           ) : (
             <p className="text-xs text-muted-foreground">This seller takes no input.</p>
           )}
+          {canSkip ? <SkipRow index={index} skipIf={step.skipIf} earlier={earlier} buyerFields={buyerFields} onChange={(c) => onChange({ ...step, skipIf: c })} /> : null}
         </>
       ) : null}
     </div>

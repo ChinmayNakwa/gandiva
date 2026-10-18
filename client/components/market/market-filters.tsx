@@ -13,15 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { KIND_LABEL } from "@/lib/format";
 import { spring } from "@/lib/motion";
 
 export interface MarketFilters {
   category: string;
+  /** "", "chain", "agent" or "data": applied in the page, after the services are fetched. */
+  kind: string;
   maxPrice: string;
   sort: string;
 }
 
-export const DEFAULT_FILTERS: MarketFilters = { category: "", maxPrice: "", sort: "rank" };
+export const DEFAULT_FILTERS: MarketFilters = { category: "", kind: "", maxPrice: "", sort: "rank" };
 
 const CATEGORIES = [
   { value: "", label: "all" },
@@ -119,6 +122,25 @@ export function MarketFiltersBar({
             value={value.maxPrice}
             onChange={(e) => set({ maxPrice: e.target.value })}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="f-kind" className="text-xs text-muted-foreground">
+            Kind
+          </Label>
+          <Select value={value.kind || "all"} onValueChange={(v) => set({ kind: v === "all" ? "" : v })}>
+            <SelectTrigger id="f-kind" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">all kinds</SelectItem>
+              {(["data", "agent", "chain"] as const).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1.5">

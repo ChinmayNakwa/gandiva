@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { statusLabel } from "@/lib/format";
+import { KIND_LABEL, statusLabel } from "@/lib/format";
 import { cn } from "cn";
 
 const TONE: Record<string, string> = {
@@ -28,6 +28,21 @@ export function StatusBadge({
       )}
     >
       {statusLabel(status)}
+    </Badge>
+  );
+}
+
+const KIND_TONE: Record<string, string> = {
+  chain: "border-primary/40 bg-primary/10 text-primary",
+  agent: "border-info/40 bg-info/10 text-info",
+  data: "border-border bg-muted/40 text-muted-foreground",
+};
+
+/** Chain / AI agent / Data API: what kind of listing this is. */
+export function KindBadge({ kind }: { kind: "chain" | "agent" | "data" }) {
+  return (
+    <Badge variant="outline" className={cn("font-mono text-[11px]", KIND_TONE[kind])}>
+      {KIND_LABEL[kind]}
     </Badge>
   );
 }

@@ -39,7 +39,11 @@ export interface Service {
   credibility?: { score: number; level: CredibilityLevel } | null;
   /** Set when this listing is an agent chain: the sellers it hires and pays to do the job. */
   chain?: { hires: string[] } | null;
+  /** What the listing is: a chain (hires and pays other sellers), an AI agent (hosted LLM seller) or a data API (everything else). */
+  kind?: Kind;
 }
+
+export type Kind = "chain" | "agent" | "data";
 
 export type CredibilityLevel = "high" | "medium" | "low" | "unproven";
 
@@ -315,11 +319,19 @@ export interface JsonSchema {
 }
 
 /** Where one input field of a chain step comes from. */
-export type ChainSource = { from: "buyer"; field: string } | { from: "fixed"; value: unknown } | { from: "step"; step: number; field: string };
+export type ChainSource = { from: "buyer"; field: string } | { from: "fixed"; value: unknown } | { from: "step"; step: number; field: string; fallback?: unknown };
+
+/** When to leave a step out: looks at a buyer field or an earlier step's output. */
+export interface ChainSkipIf {
+  when: { from: "buyer"; field: string } | { from: "step"; step: number; field: string };
+  test: "empty" | "not_empty" | "equals";
+  value?: unknown;
+}
 
 export interface ChainStepForm {
   serviceId: string;
   input: Record<string, ChainSource>;
+  skipIf?: ChainSkipIf;
 }
 
 /** What one chain has earned and spent, over its last 500 runs. Amounts are USDC smallest units. */
@@ -345,9 +357,11 @@ export interface ChainInfo {
 }
 
 export interface ChainQuote {
-  steps: { serviceId: string; name: string; category: Category; price: string }[];
+  steps: { serviceId: string; name: string; category: Category; price: string; skippable: boolean }[];
   /** All amounts in USDC smallest units. */
   cost: string;
+  /** What a call costs when every skippable step is skipped. */
+  minCost: string;
   subBudget: string;
   price: string;
   margin: string;

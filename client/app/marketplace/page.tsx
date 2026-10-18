@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { CloudOffIcon, RotateCwIcon, SearchXIcon } from "lucide-react";
 import { servicesUrl } from "@/lib/api";
+import { KIND_LABEL } from "@/lib/format";
 import { useServices } from "@/lib/hooks";
 import { getLenis } from "@/lib/scroll";
 import {
@@ -43,6 +44,7 @@ function revealCard(el: HTMLElement) {
 function filterLabels(f: MarketFilters) {
   const out: string[] = [];
   if (f.category) out.push(`category ${f.category}`);
+  if (f.kind) out.push(`kind ${KIND_LABEL[f.kind as keyof typeof KIND_LABEL] ?? f.kind}`);
   if (f.maxPrice) out.push(`max ${f.maxPrice} USDC`);
   return out;
 }
@@ -68,7 +70,7 @@ export default function MarketplacePage() {
   const all = useServices({ sort: "rank" });
   const apiUrl = servicesUrl(query);
 
-  const services = data?.services ?? [];
+  const services = (data?.services ?? []).filter((s) => !filters.kind || s.kind === filters.kind);
 
   // ⌘K / Ctrl+K anywhere, or "/" when not typing, opens the search.
   useEffect(() => {

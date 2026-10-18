@@ -2,6 +2,9 @@
 export const ADVERSARIAL_IDS = new Set(["cheap-scraper", "mirror-scraper", "junk-fx"]);
 
 /** USDC smallest units (6 decimals) -> trimmed human string. */
+/** The Marketplace's name for each kind of listing. */
+export const KIND_LABEL: Record<"chain" | "agent" | "data", string> = { chain: "Chain", agent: "AI agent", data: "Data API" };
+
 export function usdc(units?: string | number | null): string {
   if (units === null || units === undefined) return "0";
   const n = Number(units) / 1e6;

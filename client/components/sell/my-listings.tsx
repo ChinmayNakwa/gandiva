@@ -101,7 +101,7 @@ export function MyListings({
           <div className="text-[11px] text-muted-foreground">
             {s.reputation.attempts ? `${s.reputation.successes}/${s.reputation.attempts} calls succeeded` : "no calls yet"}
           </div>
-          {chains[s.id] ? <ChainStatsLine stats={chains[s.id].stats} /> : null}
+          {chains[s.id]?.stats ? <ChainStatsLine stats={chains[s.id].stats} /> : null}
         </div>
       ))}
     </div>

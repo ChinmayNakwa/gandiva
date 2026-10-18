@@ -47,7 +47,7 @@ export function ChainForm({
 }) {
   const [form, setForm] = useState<FormState>(() =>
     editing && info
-      ? { name: editing.name, description: editing.description, priceUsdc: usdc(editing.price), subBudgetUsdc: usdc(info.subBudget), steps: info.steps.map((s) => ({ serviceId: s.serviceId, input: s.input })) }
+      ? { name: editing.name, description: editing.description, priceUsdc: usdc(editing.price), subBudgetUsdc: usdc(info.subBudget), steps: info.steps.map((s) => ({ serviceId: s.serviceId, input: s.input, ...(s.skipIf ? { skipIf: s.skipIf } : {}) })) }
       : STARTER,
   );
   const [saving, setSaving] = useState(false);
@@ -68,6 +68,10 @@ export function ChainForm({
   const price = toUnits(form.priceUsdc);
   const subBudget = form.subBudgetUsdc.trim() ? toUnits(form.subBudgetUsdc) : String(autoSub);
 
+  // Fields the buyer provides (as named in the steps), and which steps can be skipped.
+  const buyerFields = [...new Set(form.steps.flatMap((s) => Object.values(s.input).flatMap((src) => (src.from === "buyer" && src.field ? [src.field] : []))))];
+  const skippable = form.steps.map((s) => Boolean(s.skipIf));
+
   const stepsProblem = (() => {
     if (form.steps.length < MIN_STEPS) return `Add at least ${MIN_STEPS} sellers to hire.`;
     for (const [i, step] of form.steps.entries()) {
@@ -75,6 +79,19 @@ export function ChainForm({
       if (!svc) return `Pick a seller for step ${i + 1}.`;
       const missing = requiredOf(svc.inputSchema).find((f) => !step.input[f]);
       if (missing) return `Step ${i + 1}: choose where "${missing}" comes from.`;
+      const unnamed = Object.entries(step.input).find(([, src]) => src.from === "buyer" && !src.field);
+      if (unnamed) return `Step ${i + 1}: give the buyer's "${unnamed[0]}" a name (lower-case letters, digits and _).`;
+      const c = step.skipIf;
+      if (c) {
+        if (i === form.steps.length - 1) return `Step ${i + 1} is the last step, so it cannot be skipped.`;
+        if (c.when.from === "buyer" && !buyerFields.includes(c.when.field)) return `Step ${i + 1}: the skip condition uses the buyer field "${c.when.field}", which no step takes from the buyer.`;
+        if (c.test === "equals" && (c.value === undefined || c.value === "")) return `Step ${i + 1}: type the value the skip condition compares with.`;
+      }
+      const needs = requiredOf(svc.inputSchema).find((f) => {
+        const src = step.input[f];
+        return src?.from === "step" && skippable[src.step - 1] && src.fallback === undefined;
+      });
+      if (needs) return `Step ${i + 1}: step ${(step.input[needs] as { step: number }).step} can be skipped, so give "${needs}" a fallback value.`;
     }
     return null;
   })();
@@ -145,7 +162,9 @@ export function ChainForm({
       steps: form.steps.map((x, j) => {
         if (j === i) return s;
         if (j < i || s.serviceId === form.steps[i].serviceId) return x;
-        return { ...x, input: Object.fromEntries(Object.entries(x.input).filter(([, src]) => !(src.from === "step" && src.step === i + 1))) };
+        const { skipIf, ...rest } = x;
+        const lookedAt = skipIf?.when.from === "step" && skipIf.when.step === i + 1;
+        return { ...rest, input: Object.fromEntries(Object.entries(x.input).filter(([, src]) => !(src.from === "step" && src.step === i + 1))), ...(skipIf && !lookedAt ? { skipIf } : {}) };
       }),
     });
 
@@ -199,9 +218,17 @@ export function ChainForm({
               index={i}
               step={step}
               earlier={chosen.slice(0, i)}
+              skippable={skippable.slice(0, i)}
+              buyerFields={buyerFields}
+              canSkip={i < form.steps.length - 1}
               services={eligible}
               onChange={(s) => setStep(i, s)}
-              onRemove={form.steps.length > MIN_STEPS && i === form.steps.length - 1 ? () => set({ steps: form.steps.slice(0, -1) }) : undefined}
+              onRemove={
+                form.steps.length > MIN_STEPS && i === form.steps.length - 1
+                  ? // The step before becomes the last one, and the last step cannot be skipped.
+                    () => set({ steps: form.steps.slice(0, -1).map(({ skipIf, ...rest }, j, all) => (j === all.length - 1 ? rest : { ...rest, ...(skipIf ? { skipIf } : {}) })) })
+                  : undefined
+              }
             />
           ))}
           {form.steps.length < MAX_STEPS ? (
@@ -231,14 +258,21 @@ export function ChainForm({
                 <div key={i} className="flex justify-between gap-2">
                   <span>
                     step {i + 1} · {s.name}
+                    {s.skippable ? " (skippable)" : ""}
                   </span>
                   <span>{usdc(s.price)}</span>
                 </div>
               ))}
               <div className="mt-2 flex justify-between gap-2 border-t border-border pt-2">
-                <span>cost per call</span>
+                <span>{!quote.minCost || quote.minCost === quote.cost ? "cost per call" : "cost per call (no step skipped)"}</span>
                 <span>{usdc(quote.cost)} USDC</span>
               </div>
+              {quote.minCost && quote.minCost !== quote.cost ? (
+                <div className="flex justify-between gap-2 text-muted-foreground">
+                  <span>cost if every skippable step is skipped</span>
+                  <span>{usdc(quote.minCost)} USDC</span>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-2">
                 <span>your price</span>
                 <span>{usdc(quote.price)} USDC</span>

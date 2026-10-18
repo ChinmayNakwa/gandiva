@@ -6,7 +6,7 @@ import { LinkIcon, ScaleIcon, ShieldAlertIcon, ShieldCheckIcon } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { CredibilityBadge } from "./credibility-badge";
-import { CategoryBadge } from "@/components/status-badge";
+import { CategoryBadge, KindBadge } from "@/components/status-badge";
 import { AddrLink } from "@/components/tx-link";
 import { ADVERSARIAL_IDS, pct, usdc } from "@/lib/format";
 import type { Service } from "@/lib/types";
@@ -75,7 +75,10 @@ export function ServiceCard({
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
             <div className="font-mono text-sm font-medium">{service.name}</div>
-            <CategoryBadge category={service.category} />
+            <div className="flex shrink-0 flex-wrap justify-end gap-1">
+              {service.kind ? <KindBadge kind={service.kind} /> : null}
+              <CategoryBadge category={service.category} />
+            </div>
           </div>
           <div className="text-xs text-muted-foreground">
             {service.description || "No description."}
@@ -155,7 +158,7 @@ export function ServiceCard({
           {service.chain ? (
             <div className="flex items-start gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary">
               <LinkIcon className="mt-0.5 size-3 shrink-0" />
-              <span>agent chain — hires {service.chain.hires.length ? service.chain.hires.join(", ") : "other sellers"} and pays them from its own wallet to do the job</span>
+              <span>chain — hires {service.chain.hires.length ? service.chain.hires.join(", ") : "other sellers"} and pays them from its own wallet to do the job</span>
             </div>
           ) : null}
 
