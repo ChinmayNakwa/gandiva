@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS hosted_sellers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Sell-tab "MCP server" listings: one row per tool of a seller's MCP server. The bearer token is stored encrypted (see src/crypto/secrets.ts).
+CREATE TABLE IF NOT EXISTS mcp_sellers (
+  service_id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  server_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  token_enc TEXT,
+  tool_name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Sell-tab "agent chain" listings: the fixed steps (which sellers to hire, in order, and where each input comes from).
 CREATE TABLE IF NOT EXISTS chain_sellers (
   service_id TEXT PRIMARY KEY,

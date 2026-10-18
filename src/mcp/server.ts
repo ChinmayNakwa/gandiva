@@ -6,6 +6,7 @@ import { createPaymentWrapper, createToolResourceUrl, MCP_PAYMENT_RESPONSE_META_
 import type { x402ResourceServer } from "@x402/core/server";
 import { config, fromUnits, NETWORK, USDC_ADDRESS, USDC_EIP712 } from "../config.js";
 import { askModel, getHosted } from "../hosted/agents.js";
+import { getMcpTool, runMcpTool } from "../mcpseller/servers.js";
 import { addSale, getService, listServices, reputationFor, searchServices, walletOwner } from "../registry/store.js";
 import { activeSellerDefs } from "../sellers/index.js";
 import { nonceKey, replayGuard, ServiceError } from "../x402/paidRoute.js";
@@ -69,7 +70,24 @@ export function paidTools(): PaidTool[] {
         },
       ];
     });
-  return [...builtIn, ...agents];
+  const mcpTools: PaidTool[] = listServices().flatMap((s) => {
+    const row = s.owner.startsWith("wallet:") ? getMcpTool(s.id) : undefined;
+    if (!row || s.owner !== walletOwner(row.owner)) return [];
+    return [
+      {
+        name: toolName(s.id),
+        serviceId: s.id,
+        description: `${s.description} (Sell-tab MCP tool, paid to ${s.payTo})`,
+        price: BigInt(s.price),
+        payTo: s.payTo,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        selfValidate: true,
+        run: (input: Record<string, unknown>) => runMcpTool(row, input),
+      },
+    ];
+  });
+  return [...builtIn, ...agents, ...mcpTools];
 }
 
 const FREE_TOOLS = [

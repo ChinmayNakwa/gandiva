@@ -176,6 +176,7 @@ export function deleteOwnedService(id: string, wallet: string): "deleted" | "not
 
 export function deleteService(id: string) {
   db.prepare("DELETE FROM hosted_sellers WHERE service_id = ?").run(id);
+  db.prepare("DELETE FROM mcp_sellers WHERE service_id = ?").run(id);
   db.prepare("DELETE FROM chain_sellers WHERE service_id = ?").run(id);
   db.prepare("DELETE FROM chain_runs WHERE service_id = ?").run(id);
   return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;

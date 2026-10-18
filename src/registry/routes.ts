@@ -9,6 +9,8 @@ import { chainInfo, kindOf, listChainsFor } from "../chains/chains.js";
 import { chainRoutes } from "../chains/routes.js";
 import { isChainService } from "../chains/store.js";
 import { listHostedFor } from "../hosted/agents.js";
+import { mcpSellerRoutes } from "../mcpseller/routes.js";
+import { isMcpService, listMcpFor } from "../mcpseller/servers.js";
 import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { stakeRoutes } from "../stake/routes.js";
@@ -151,10 +153,11 @@ const signedIn = (c: Context) => currentUser(c);
 registry.get("/mine", (c) => {
   const me = signedIn(c);
   if (!me) return c.json({ error: "sign in with your wallet first" }, 401);
-  return c.json({ address: me, services: listByOwner(me).map((s) => ({ ...s, reputation: reputationFor(s.id) })), agents: listHostedFor(me), chains: listChainsFor(me) });
+  return c.json({ address: me, services: listByOwner(me).map((s) => ({ ...s, reputation: reputationFor(s.id) })), agents: listHostedFor(me), mcp: listMcpFor(me), chains: listChainsFor(me) });
 });
 
 registry.route("/mine/llm-agents", hostedRoutes);
+registry.route("/mine/mcp-servers", mcpSellerRoutes);
 registry.route("/mine/chains", chainRoutes);
 registry.route("/stake", stakeRoutes);
 
@@ -170,6 +173,7 @@ registry.post(
       if (blocked) return c.json({ error: blocked }, 400);
       const id = typeof body?.id === "string" ? body.id : typeof body?.name === "string" ? slug(body.name) : "";
       if (id && isChainService(id)) return c.json({ error: `"${id}" is one of your agent chains; edit it with the agent chain form` }, 409);
+      if (id && isMcpService(id)) return c.json({ error: `"${id}" is one of your MCP tools; refresh it with the MCP server form` }, 409);
       const listed = registerForWallet(body, me);
       await verifyService(listed);
       return c.json(getService(listed.id), 201);
