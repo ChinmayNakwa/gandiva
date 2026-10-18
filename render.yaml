@@ -1,13 +1,25 @@
 # Render blueprint for the Gandiva API (backend only). The UI lives on Vercel and proxies to this service.
-# The free plan has no persistent disk: data/gandiva.db (ledger, registry, users) is wiped on every restart or deploy.
+# The free plan has no persistent disk, so Litestream (deploy/start.sh) copies data/gandiva.db (ledger, registry, users) to a
+# bucket and restores it on every start. Without the LITESTREAM_* variables below the database is wiped on every restart or deploy.
 services:
   - type: web
     name: gandiva-api
     runtime: docker
     plan: free
     healthCheckPath: /healthz
-    autoDeployTrigger: off # a deploy wipes the ledger, so deploy by hand and never during judging
+    autoDeployTrigger: off # deploy by hand
     envVars:
+      # Litestream replica (S3-compatible, e.g. Backblaze B2). Leave LITESTREAM_BUCKET unset to run without replication.
+      - key: LITESTREAM_BUCKET
+        sync: false
+      - key: LITESTREAM_ENDPOINT # with https://, e.g. https://s3.us-east-005.backblazeb2.com
+        sync: false
+      - key: LITESTREAM_REGION # e.g. us-east-005
+        sync: false
+      - key: LITESTREAM_ACCESS_KEY_ID
+        sync: false
+      - key: LITESTREAM_SECRET_ACCESS_KEY
+        sync: false
       # Public URL of THIS service, e.g. https://gandiva-api.onrender.com. Every registry listing and 402 resource URL is built from it.
       - key: PUBLIC_BASE_URL
         sync: false
