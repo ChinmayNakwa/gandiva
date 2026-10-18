@@ -6,7 +6,25 @@ import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/status-badge";
 import { usdc } from "@/lib/format";
 import { deleteListing } from "@/lib/api";
-import type { AgentInfo, ChainInfo, Service } from "@/lib/types";
+import type { AgentInfo, ChainInfo, ChainStats, Service } from "@/lib/types";
+
+/** What a chain has earned, spent and kept; failed and test runs cost money too, so they are in the cost. */
+function ChainStatsLine({ stats }: { stats: ChainStats }) {
+  const lost = stats.profit.startsWith("-");
+  const last = stats.recent.find((r) => r.kind === "sale" && r.outcome === "failed");
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[11px]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono">
+        <span>{stats.calls} paid {stats.calls === 1 ? "call" : "calls"}</span>
+        <span>{stats.failures} failed</span>
+        <span>earned {usdc(stats.revenue)}</span>
+        <span>spent on sellers {usdc(stats.cost)}</span>
+        <span className={lost ? "text-bad" : "text-primary"}>{lost ? "lost" : "kept"} {usdc(stats.profit.replace("-", ""))} USDC</span>
+      </div>
+      {last?.error ? <div className="truncate text-muted-foreground" title={last.error}>last failure: {last.error}</div> : null}
+    </div>
+  );
+}
 
 export function MyListings({
   services,
@@ -83,6 +101,7 @@ export function MyListings({
           <div className="text-[11px] text-muted-foreground">
             {s.reputation.attempts ? `${s.reputation.successes}/${s.reputation.attempts} calls succeeded` : "no calls yet"}
           </div>
+          {chains[s.id] ? <ChainStatsLine stats={chains[s.id].stats} /> : null}
         </div>
       ))}
     </div>

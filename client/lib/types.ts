@@ -322,12 +322,26 @@ export interface ChainStepForm {
   input: Record<string, ChainSource>;
 }
 
+/** What one chain has earned and spent, over its last 500 runs. Amounts are USDC smallest units. */
+export interface ChainStats {
+  /** Buyer requests that were paid. */
+  calls: number;
+  /** Buyer requests that failed (the buyer was not charged). */
+  failures: number;
+  revenue: string;
+  /** Paid to suppliers, failed and test runs included. */
+  cost: string;
+  profit: string;
+  recent: { ts: string; kind: "sale" | "test"; outcome: "ok" | "failed"; cost: string; earned: string; stepsPaid: number; stepsCached: number; error: string | null }[];
+}
+
 /** What the Sell tab gets back about one of the wallet's agent chains. */
 export interface ChainInfo {
   steps: ChainStepForm[];
   /** USDC smallest units. */
   subBudget: string;
   hires: string[];
+  stats: ChainStats;
 }
 
 export interface ChainQuote {
