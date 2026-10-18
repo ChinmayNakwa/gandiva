@@ -33,23 +33,49 @@ Scout hires a scraper, an FX-rate seller and a Hindi-summary seller, pays each o
 
 ![Marketplace with agent wallet](docs/screenshots/marketplace-wallet.png)
 
+**Sell tab: list your own agent and see the 402 a buyer will get**
+
+![Sell tab with an LLM agent listing](docs/screenshots/sell-agent.png)
+
 ## Try It Live
 
 1. Open **[gandiva-navy.vercel.app](https://gandiva-navy.vercel.app/)**. The API runs on a free server, so the first load can take up to a minute.
-2. **Sign in** with MetaMask on the Base Sepolia testnet (top-right).
+2. **Sign in** with MetaMask on the Base Sepolia testnet (top-right). You sign a one-time message; no gas and no payment.
 3. On **Marketplace**, add test USDC to your **agent wallet** (free from [faucet.circle.com](https://faucet.circle.com)).
 4. Go to **Run task**, pick an example, set a budget and run it. Watch each 402, payment and transaction happen live.
 5. Open **Ledger** to see every call with its amount, status and a BaseScan link. You can withdraw from the agent wallet at any time, gas-free.
-6. Want to earn? On **Sell**, list your own x402 endpoint and get paid per call to your wallet.
+6. Want to earn? On **Sell**, list a service and get paid per call to your wallet (see [Sell your own service](#sell-your-own-service)).
 
 ## Features
 
-- **Registry and marketplace:** search services by category and price, with reputation (success rate, latency) and a credibility score that needs no KYC.
-- **Buyer agent "Scout":** an LLM plans the calls; deterministic code validates every plan, checks the cost and pays. Bad sellers are skipped automatically.
-- **8 live sellers:** 5 real ones (book scraping, FX rates, city weather, Hindi summary, sentiment) and 3 demo bad actors.
-- **Personal agent wallets:** sign in with your wallet, fund your own agent and set a spend limit.
-- **Sell tab:** list any x402 endpoint; the registry checks its real 402 against the listing.
+**Buy**
+
+- **Registry and marketplace:** search services by category and price, with reputation (success rate, latency) and a credibility score that needs no KYC. A compare view explains why one seller ranks above another.
+- **Buyer agent "Scout":** an LLM plans the calls; deterministic code validates every plan, checks the cost and pays. Bad sellers are skipped automatically. Signed-in users can plan with their own Ollama key, model and host instead of the server's.
+- **Personal agent wallets:** sign in with your wallet, fund your own agent, set a spend limit and withdraw gas-free. The key is stored encrypted.
 - **Ledger:** every attempted call with time, seller, price, amount paid, tx hash, status and latency, plus a seller sales view.
+
+**Sell**
+
+- **Sell tab:** list a service owned by your wallet. Only you can edit or delete it.
+- **Live sellers:** book scraping, FX rates, city weather, Hindi summary, sentiment, and a travel-brief seller that hires three of the others, plus 3 demo bad actors.
+
+**Plug in**
+
+- **Paid MCP tools:** `/mcp` exposes the marketplace as MCP tools that any x402-aware MCP client can pay per call (`npm run mcp:demo`).
+
+### Sell your own service
+
+On the **Sell** tab you can list:
+
+| Kind | What you provide | What Gandiva does |
+|---|---|---|
+| **Your own endpoint** | A URL that answers with an x402 402, plus price and schemas | Checks the real 402 against your listing; flags any price or payee mismatch |
+| **LLM agent** | A model, a system prompt and your Ollama key | Hosts a paid endpoint for you; if the model fails, the buyer is not charged |
+| **MCP server** | An MCP URL and optional token | Lists every tool of that server as its own paid listing |
+| **Agent chain** | Two or more steps that hire other sellers | Pays the sellers it hires and sends the earnings to your agent wallet |
+
+Every listing is paid to your wallet, per call, with the same "no result, no charge" rule.
 
 ## Payment Safety
 
@@ -152,17 +178,28 @@ npm run wallets:new         # creates fresh testnet wallets in .env
 npm start                   # one command: tunnel + API + web app
 ```
 
-Then open the URL printed in the terminal. To check the safety claims: `npm test` (300+ offline tests), `npm run reconcile`, and the `npm run judge:*` scripts.
+Then open the URL printed in the terminal.
+
+Useful extras:
+
+- `npm test`: 370+ offline tests. `npm run typecheck` checks the types.
+- `npm run reconcile` and the `npm run judge:*` scripts check the payment-safety claims against the ledger and the chain.
+- `npm run dev:seller` starts a small x402 test seller you can list from the Sell tab.
+- `npm run mcp:demo` pays for Gandiva's MCP tools from an off-the-shelf MCP client.
 
 > ⚠️ Testnet only. Never put mainnet keys in `.env`.
 
+## Deploying
+
+The API (registry, sellers, buyer, ledger) is one Docker service on Render; the Next.js app is a separate Vercel project that proxies to it. The free Render plan has no disk, so the database is copied to an S3-compatible bucket with Litestream and restored on every start. Step-by-step setup is in [docs/TECHNICAL.md](docs/TECHNICAL.md#deploying-render-api--vercel-ui).
+
 ## Tech Stack
 
-Node.js, TypeScript, Hono, SQLite, Next.js 16, Tailwind v4, x402 SDKs (`@x402/*`), viem, Ollama (gpt-oss), Vitest. Hosted on Vercel (UI) and Render (API).
+Node.js, TypeScript, Hono, SQLite (Litestream), Next.js 16, Tailwind v4, x402 SDKs (`@x402/*`), Model Context Protocol SDK, viem, Ollama (gpt-oss), Vitest. Hosted on Vercel (UI) and Render (API).
 
 ## More Details
 
-The credibility score, seller comparison, the payment scheduler, every judge script and the deploy steps are in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
+The credibility score, seller comparison, the payment scheduler, the safety-check scripts and the deploy steps are in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
 
 ## License
 
