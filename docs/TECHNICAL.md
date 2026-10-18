@@ -107,7 +107,9 @@ The API (registry, sellers, buyer, ledger) is one Docker service; the Next.js UI
 
 Things to know:
 
-- **The free Render plan has no disk.** `data/gandiva.db` (ledger, registry, users, agent wallets) is wiped on every restart or deploy. Deploy by hand (auto-deploy is off), never mid-judging, and use a freshly funded buyer wallet for a run you want to reconcile.
+- **The free Render plan has no disk, so the database is replicated with Litestream.** `deploy/start.sh` restores `data/gandiva.db` (ledger, registry, users, agent wallets) from an S3-compatible bucket on start, then runs the server under `litestream replicate`, which copies every change to the bucket about once a second. Set `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (with `https://`), `LITESTREAM_REGION`, `LITESTREAM_ACCESS_KEY_ID` and `LITESTREAM_SECRET_ACCESS_KEY` on Render (Backblaze B2 works; set the bucket to keep only the last file version). Without `LITESTREAM_BUCKET` the server starts without replication and the data is wiped on every restart or deploy.
+- **Litestream limits:** a hard crash can lose the last second or two of writes; one server instance only; keep the bucket private (it holds the whole database, including encrypted keys) and never change `SECRETS_KEY`, or the restored wallets cannot be decrypted.
+- **Deploys:** auto-deploy is off, so deploy by hand.
 - **The free plan sleeps after 15 idle minutes.** Point an uptime pinger (e.g. UptimeRobot) at `/healthz` every 5 minutes.
 - Every registry listing and 402 `resource.url` is built from `PUBLIC_BASE_URL`, so sellers are reached on the Render URL directly, not through Vercel.
 - Local image check: `docker build -t gandiva-api .`
