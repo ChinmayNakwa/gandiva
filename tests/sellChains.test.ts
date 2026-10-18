@@ -34,7 +34,7 @@ const { auth } = await import("../src/auth/routes.js");
 const { registry } = await import("../src/registry/routes.js");
 const { buildSellers, sellerDefs } = await import("../src/sellers/index.js");
 const { ensureAgentWallet } = await import("../src/agents/wallet.js");
-const { clearStepCache, fit, planChain, runChain, ChainError, MAX_CONCURRENT, MAX_STRIKES } = await import("../src/chains/chains.js");
+const { clearStepCache, fit, kindOf, planChain, runChain, ChainError, MAX_CONCURRENT, MAX_STRIKES } = await import("../src/chains/chains.js");
 const { addChainRun, chainStats, getChain, upsertChain } = await import("../src/chains/store.js");
 const { addSale, getService, setVerification, upsertService } = await import("../src/registry/store.js");
 const { ServiceError } = await import("../src/x402/paidRoute.js");
@@ -138,11 +138,61 @@ describe("agent chain: planning and validation", () => {
     expect(() => planChain(withStep(2, { serviceId: "other-chain", input: {} }) as any, "other-chain", lookupIn(list))).toThrow(/cannot hire itself/);
   });
 
+  it("tells chains, AI agents and data APIs apart", () => {
+    upsertChain({ serviceId: "some-chain", owner: "0xabc", steps: [], subBudget: 1n });
+    db.prepare("INSERT OR REPLACE INTO hosted_sellers (service_id, owner, host, model, system_prompt) VALUES ('ai-helper','0xabc','https://ollama.com','m','be brief')").run();
+    expect(kindOf("some-chain")).toBe("chain");
+    expect(kindOf("travel-brief")).toBe("chain");
+    expect(kindOf("ai-helper")).toBe("agent");
+    expect(kindOf("city-info")).toBe("data");
+    db.exec("DELETE FROM hosted_sellers");
+  });
+
   it("the sub-budget must cover today's prices and stay within the price", () => {
     const lookup = lookupIn(listed());
     expect(() => planChain(travel({ subBudget: "12999" }), "c", lookup)).toThrow(/must cover/);
     expect(() => planChain(travel({ subBudget: "20001" }), "c", lookup)).toThrow(/not be more than your price/);
     expect(planChain(travel({ subBudget: "20000" }), "c", lookup).cost).toBe(13000n);
+  });
+
+  it("a step can be skipped under a condition, and the steps after it need a fallback for what it would have given", () => {
+    const lookup = lookupIn(listed());
+    const skipFx = (extra: Record<string, unknown> = {}) => withStep(1, { serviceId: "fx-rates", input: { from: { from: "buyer", field: "currency" }, to: { from: "step", step: 1, field: "currency" } }, skipIf: { when: { from: "buyer", field: "currency" }, test: "empty" }, ...extra });
+    const plan = planChain(skipFx(), "c", lookup);
+    expect(plan.cost).toBe(13000n);
+    expect(plan.minCost).toBe(12000n);
+    expect(plan.steps[1].skipIf).toEqual({ when: { from: "buyer", field: "currency" }, test: "empty" });
+
+    const skipCity = (to: Record<string, unknown>, texts: Record<string, unknown>) => {
+      const t = travel();
+      t.steps[0].skipIf = { when: { from: "buyer", field: "city" }, test: "equals", value: "Atlantis" };
+      t.steps[1].input.to = to;
+      t.steps[2].input.texts = texts;
+      return t;
+    };
+    const fromCity = (field: string, extra: Record<string, unknown> = {}) => ({ from: "step", step: 1, field, ...extra });
+    expect(() => planChain(skipCity(fromCity("currency"), fromCity("conditions", { fallback: "none" })), "c", lookup)).toThrow(/step 1 can be skipped, so give "to" a fallback/);
+    expect(() => planChain(skipCity(fromCity("currency", { fallback: "USD" }), fromCity("conditions")), "c", lookup)).toThrow(/give "texts" a fallback/);
+    expect(() => planChain(skipCity(fromCity("currency", { fallback: 5 }), fromCity("conditions", { fallback: "none" })), "c", lookup)).toThrow(/fallback for "to" is not valid/);
+    expect(planChain(skipCity(fromCity("currency", { fallback: "USD" }), fromCity("conditions", { fallback: "no weather" })), "c", lookup).minCost).toBe(11000n);
+  });
+
+  it("refuses skip conditions that make no sense", () => {
+    const lookup = lookupIn(listed());
+    const on = (i: number, skipIf: unknown) => {
+      const t = travel();
+      t.steps[i].skipIf = skipIf;
+      return t;
+    };
+    const buyer = (field: string) => ({ from: "buyer", field });
+    const bad: [unknown, RegExp][] = [
+      [on(2, { when: buyer("city"), test: "empty" }), /last step, so it cannot be skipped/],
+      [on(1, { when: buyer("nope"), test: "empty" }), /no step takes it from the buyer/],
+      [on(1, { when: { from: "step", step: 2, field: "rate" }, test: "empty" }), /only look at an earlier step/],
+      [on(1, { when: { from: "step", step: 1, field: "no_such_field" }, test: "empty" }), /does not return/],
+      [on(1, { when: buyer("city"), test: "equals" }), /compares with/],
+    ];
+    for (const [form, why] of bad) expect(() => planChain(form as any, "c", lookup), String(why)).toThrow(why);
   });
 
   it("knows which values can fill which fields", () => {
@@ -170,6 +220,58 @@ describe("agent chain: running", () => {
     expect(out.hired.map((h) => [h.service, h.tx_hash])).toEqual([["city-info", "0xcity-info"], ["fx-rates", "0xfx-rates"], ["hindi-summary", "0xhindi-summary"]]);
     expect(out.cost_units).toBe("13000");
     expect(validate(plan().outputSchema, out)).toEqual({ ok: true });
+  });
+
+  describe("skipping steps", () => {
+    const skipFx = (extra: Record<string, unknown> = {}) =>
+      planChain(withStep(1, { serviceId: "fx-rates", input: { from: { from: "buyer", field: "currency" }, to: { from: "step", step: 1, field: "currency" } }, skipIf: { when: { from: "buyer", field: "currency" }, test: "empty" }, ...extra }) as any, "my-chain", lookupIn(listed()));
+
+    it("leaves a step out (and unpaid) when its condition holds, and runs it otherwise", async () => {
+      const pl = skipFx();
+      const skipped = fakePay();
+      const out = await runChain(chainOf(pl), { city: "Tokyo", currency: "" }, deps(skipped.pay));
+      expect(skipped.calls.map((c) => c.id)).toEqual(["city-info", "hindi-summary"]);
+      expect(out.steps.map((s: any) => [s.service, s.skipped ?? false])).toEqual([["city-info", false], ["fx-rates", true], ["hindi-summary", false]]);
+      expect(out.hired.map((h) => h.service)).toEqual(["city-info", "hindi-summary"]);
+      expect(out.cost_units).toBe("12000");
+      expect(validate(pl.outputSchema, out)).toEqual({ ok: true });
+
+      const bought = fakePay();
+      await runChain(chainOf(pl), { city: "Tokyo", currency: "GBP" }, deps(bought.pay));
+      expect(bought.calls.map((c) => c.id)).toEqual(["city-info", "fx-rates", "hindi-summary"]);
+    });
+
+    it("gives later steps their fallback for what a skipped step would have returned", async () => {
+      const t = travel();
+      t.steps[0].skipIf = { when: { from: "buyer", field: "city" }, test: "equals", value: "Atlantis" };
+      t.steps[1].input.to = { from: "step", step: 1, field: "currency", fallback: "USD" };
+      t.steps[2].input.texts = { from: "step", step: 1, field: "conditions", fallback: "no weather data" };
+      const pl = planChain(t, "my-chain", lookupIn(listed()));
+      const p = fakePay();
+      const out = await runChain(chainOf(pl), { city: "Atlantis", currency: "GBP" }, deps(p.pay));
+      expect(p.calls.map((c) => [c.id, c.input])).toEqual([["fx-rates", { from: "GBP", to: "USD" }], ["hindi-summary", { texts: ["no weather data"] }]]);
+      expect(out.steps[0]).toEqual({ service: "city-info", output: null, skipped: true });
+      expect(out.cost_units).toBe("11000");
+    });
+
+    it("tests values the way a seller would expect", async () => {
+      const { isEmpty, shouldSkip } = await import("../src/chains/chains.js");
+      for (const v of [undefined, null, "", "  ", [], {}]) expect(isEmpty(v), JSON.stringify(v)).toBe(true);
+      for (const v of [0, false, "x", [0], { a: 1 }]) expect(isEmpty(v), JSON.stringify(v)).toBe(false);
+      const results = new Map<string, unknown>([["in", { city: "Tokyo" }], ["s1", { items: [] }]]);
+      const when = (w: any, test: any, value?: unknown) => shouldSkip({ when: w, test, value }, results);
+      expect(when({ from: "step", step: 1, field: "items" }, "empty")).toBe(true);
+      expect(when({ from: "step", step: 2, field: "x" }, "empty")).toBe(true); // a step that did not run has nothing
+      expect(when({ from: "step", step: 1, field: "missing" }, "not_empty")).toBe(false);
+      expect(when({ from: "buyer", field: "city" }, "equals", "Tokyo")).toBe(true);
+      expect(when({ from: "buyer", field: "city" }, "equals", "Paris")).toBe(false);
+      const typed = new Map<string, unknown>([["in", { n: 5, none: null, list: ["a"] }]]);
+      const check = (field: string, value: unknown) => shouldSkip({ when: { from: "buyer", field }, test: "equals", value }, typed);
+      expect(check("n", "5")).toBe(true); // text typed in the form matches a number
+      expect(check("n", "6")).toBe(false);
+      expect(check("missing", "undefined")).toBe(false);
+      expect(check("list", ["a"])).toBe(true);
+    });
   });
 
   it("swaps a seller that returns junk for a verified one doing the same job", async () => {
@@ -200,7 +302,7 @@ describe("agent chain: running", () => {
     const input = { city: "Tokyo", currency: "GBP" };
     const who = { payer: "0xBuyer0000000000000000000000000000000001", price: 20000n };
     beforeEach(() => {
-      db.exec("DELETE FROM sales; DELETE FROM chain_runs");
+      db.exec("DELETE FROM sales; DELETE FROM chain_runs; DELETE FROM hosted_sellers");
       clearStepCache();
     });
 
@@ -357,6 +459,16 @@ describe("agent chain: Sell tab and paid route", () => {
     expect(all.services.find((s: any) => s.id === "city-info").chain).toBeNull();
   });
 
+  it("tags every listing in the registry as a chain, an AI agent or a data API", async () => {
+    await send("POST", "/mine/chains", aliceCookie, form());
+    upsertService({ id: "ai-helper", name: "ai-helper", category: "inference", endpoint: "http://127.0.0.1:4021/sellers/ai", method: "POST", price: "1000", network: NETWORK, asset: accept().asset as string, payTo: SELLER, inputSchema: { type: "object" }, outputSchema: { type: "object" }, description: "x", owner: "wallet:0xabc" });
+    db.prepare("INSERT OR REPLACE INTO hosted_sellers (service_id, owner, host, model, system_prompt) VALUES ('ai-helper','0xabc','https://ollama.com','m','be brief')").run();
+    const all = (await (await send("GET", "/services")).json()) as any;
+    const kinds = Object.fromEntries(all.services.map((s: any) => [s.id, s.kind]));
+    expect(kinds).toMatchObject({ "tokyo-brief": "chain", "ai-helper": "agent", "city-info": "data", "fx-rates": "data" });
+    db.exec("DELETE FROM hosted_sellers");
+  });
+
   it("needs a sign-in, a SECRETS_KEY and 2 to 3 steps", async () => {
     expect((await send("POST", "/mine/chains", undefined, form())).status).toBe(401);
     expect((await send("POST", "/mine/chains", aliceCookie, form({ steps: travel().steps.slice(0, 1) }))).status).toBe(400);
@@ -386,7 +498,24 @@ describe("agent chain: Sell tab and paid route", () => {
     const q = (await res.json()) as any;
     expect(q).toMatchObject({ cost: "13000", subBudget: "13000", price: "20000", margin: "7000", category: "inference", agentWallet: { address: ensureAgentWallet(alice.address), balance: "50000", enough: true } });
     expect(q.steps.map((s: any) => s.serviceId)).toEqual(["city-info", "fx-rates", "hindi-summary"]);
+    expect(q).toMatchObject({ minCost: "13000" });
     expect((await send("POST", "/mine/chains/quote", aliceCookie, travel({ subBudget: "1" }))).status).toBe(400);
+  });
+
+  it("saves, quotes and lists a chain with a skippable step", async () => {
+    const skippable = travel();
+    skippable.steps[1].skipIf = { when: { from: "buyer", field: "currency" }, test: "empty" };
+    const q = (await (await send("POST", "/mine/chains/quote", aliceCookie, skippable)).json()) as any;
+    expect(q).toMatchObject({ cost: "13000", minCost: "12000" });
+    expect(q.steps.map((s: any) => s.skippable)).toEqual([false, true, false]);
+    expect((await send("POST", "/mine/chains", aliceCookie, form({ steps: skippable.steps }))).status).toBe(201);
+    const mine = (await (await send("GET", "/mine", aliceCookie)).json()) as any;
+    expect(mine.chains["tokyo-brief"].steps[1].skipIf).toEqual({ when: { from: "buyer", field: "currency" }, test: "empty" });
+    const last = travel();
+    last.steps[2].skipIf = { when: { from: "buyer", field: "city" }, test: "empty" };
+    const res = await send("POST", "/mine/chains", aliceCookie, form({ id: "other-brief", name: "other brief", steps: last.steps }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toMatch(/cannot be skipped/);
   });
 
   it("the paid route asks for the listed price to the agent wallet, and charges nothing when the chain is out of float", async () => {
