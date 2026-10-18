@@ -1,0 +1,11 @@
+# Continuously copies the SQLite file to an S3-compatible bucket (Backblaze B2). Values come from environment variables, so no
+# secret is in this file. LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY are read by litestream itself.
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: gandiva
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        force-path-style: true
