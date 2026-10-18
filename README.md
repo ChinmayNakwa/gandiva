@@ -203,4 +203,4 @@ The credibility score, seller comparison, the payment scheduler, the safety-chec
 
 ## License
 
-ISC
+[ISC](LICENSE)
