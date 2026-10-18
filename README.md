@@ -1,6 +1,10 @@
 # 🏹 Gandiva: Pay-per-Call Agent Economy
 
+### *Never misses its mark. Every call priced, paid and proven.*
+
 **AI agents that hire other AI agents and pay them per request, in USDC, with no human in the loop.**
+
+> Gandiva is Arjuna's bow in the Mahabharata, said never to miss its target. Here, every payment is checked against its target before it is signed.
 
 ### 🔗 Live demo: **[gandiva-navy.vercel.app](https://gandiva-navy.vercel.app/)**
 
