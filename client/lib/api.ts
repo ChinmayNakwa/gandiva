@@ -6,6 +6,9 @@ import type {
   ChainQuote,
   ChainStepForm,
   ChainTestResult,
+  Category,
+  McpSaved,
+  McpToolsLoaded,
   Service,
   ServicesResponse,
 } from "./types";
@@ -89,6 +92,20 @@ export interface AgentForm {
 export const saveAgent = (form: AgentForm) => send<Service & { hasKey: boolean }>("POST", "/registry/mine/llm-agents", form);
 export const testAgent = (form: Omit<AgentForm, "name" | "description" | "price"> & { text: string }) =>
   send<{ answer: string; model: string; ms: number }>("POST", "/registry/mine/llm-agents/test", form);
+
+export interface McpServerForm {
+  url: string;
+  /** Leave out to keep the token already saved for this URL. */
+  token?: string;
+  /** The group the tools are listed under; leave out to use the server's own name. */
+  name?: string;
+  category: Category;
+  /** USDC smallest units (6 decimals), one price for every tool. */
+  price: string;
+}
+
+export const loadMcpTools = (form: Pick<McpServerForm, "url" | "token">) => send<McpToolsLoaded>("POST", "/registry/mine/mcp-servers/tools", form);
+export const saveMcpServer = (form: McpServerForm) => send<McpSaved>("POST", "/registry/mine/mcp-servers", form);
 
 export interface ChainForm {
   id?: string;

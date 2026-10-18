@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/status-badge";
 import { usdc } from "@/lib/format";
 import { deleteListing } from "@/lib/api";
-import type { AgentInfo, ChainInfo, ChainStats, Service } from "@/lib/types";
+import type { AgentInfo, ChainInfo, ChainStats, McpInfo, Service } from "@/lib/types";
 
 /** What a chain has earned, spent and kept; failed and test runs cost money too, so they are in the cost. */
 function ChainStatsLine({ stats }: { stats: ChainStats }) {
@@ -30,12 +30,16 @@ export function MyListings({
   services,
   agents,
   chains,
+  mcp,
+  onRefreshMcp,
   onEdit,
   onChanged,
 }: {
   services: Service[];
   agents: Record<string, AgentInfo>;
   chains: Record<string, ChainInfo>;
+  mcp: Record<string, McpInfo>;
+  onRefreshMcp: (info: McpInfo, s: Service) => void;
   onEdit: (s: Service) => void;
   onChanged: () => void;
 }) {
@@ -69,14 +73,23 @@ export function MyListings({
             {agents[s.id] ? (
               <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">LLM agent · {agents[s.id].model}</span>
             ) : null}
+            {mcp[s.id] ? (
+              <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">MCP tool · {mcp[s.id].serverId}</span>
+            ) : null}
             {chains[s.id] ? (
               <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">agent chain · {chains[s.id].hires.join(" → ")}</span>
             ) : null}
             <span className="font-mono text-sm text-primary">{usdc(s.price)} USDC / call</span>
             <span className="ml-auto flex gap-1">
-              <Button size="sm" variant="outline" onClick={() => onEdit(s)} disabled={busy === s.id}>
-                Edit
-              </Button>
+              {mcp[s.id] ? (
+                <Button size="sm" variant="outline" onClick={() => onRefreshMcp(mcp[s.id], s)} disabled={busy === s.id} title="Re-read the server's tools and update the prices here">
+                  Refresh server
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => onEdit(s)} disabled={busy === s.id}>
+                  Edit
+                </Button>
+              )}
               <Button size="sm" variant="ghost" className="text-bad" onClick={() => remove(s)} disabled={busy === s.id}>
                 Delete
               </Button>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { BotIcon, LinkIcon, PlugIcon } from "lucide-react";
+import { BotIcon, LinkIcon, PlugIcon, ServerIcon } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageIntro } from "@/components/page-intro";
 import { Button } from "@/components/ui/button";
@@ -10,16 +10,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChainForm } from "@/components/sell/chain-form";
 import { LlmAgentForm } from "@/components/sell/llm-agent-form";
 import { ListingFormCard } from "@/components/sell/listing-form";
+import { McpServerForm } from "@/components/sell/mcp-server-form";
 import { MyListings } from "@/components/sell/my-listings";
 import { StakePanel } from "@/components/sell/stake-panel";
 import { fetcher } from "@/lib/api";
-import type { AgentInfo, ChainInfo, Service } from "@/lib/types";
+import type { AgentInfo, Category, ChainInfo, McpInfo, McpSaved, Service } from "@/lib/types";
 
-type Template = "endpoint" | "llm" | "chain";
+type Template = "endpoint" | "llm" | "chain" | "mcp";
 
 const TEMPLATES: { id: Template; title: string; text: string; icon: typeof PlugIcon }[] = [
   { id: "endpoint", title: "Bring your own endpoint", text: "You run a server that answers with an x402 402. List its URL, price and schemas.", icon: PlugIcon },
   { id: "llm", title: "LLM agent (Ollama)", text: "No server needed. Give a model, a system prompt and your Ollama key; we host the paid endpoint.", icon: BotIcon },
+  { id: "mcp", title: "MCP server", text: "No server of ours needed. Give an MCP URL (and token); every tool on it is sold per call and pays your wallet.", icon: ServerIcon },
   { id: "chain", title: "Agent chain", text: "No server needed. Pick sellers to hire in order; your agent wallet pays them and keeps the margin.", icon: LinkIcon },
 ];
 
@@ -27,21 +29,33 @@ const verdict = (s: Service) => (s.verification === "verified" ? "402 matches" :
 
 export default function SellPage() {
   const { address, loading, busy, signIn, error } = useAuth();
-  const { data, mutate } = useSWR<{ address: string; services: Service[]; agents?: Record<string, AgentInfo>; chains?: Record<string, ChainInfo> }>(address ? "/registry/mine" : null, fetcher);
+  const { data, mutate } = useSWR<{ address: string; services: Service[]; agents?: Record<string, AgentInfo>; chains?: Record<string, ChainInfo>; mcp?: Record<string, McpInfo> }>(address ? "/registry/mine" : null, fetcher);
   const [template, setTemplate] = useState<Template>("endpoint");
   const [editing, setEditing] = useState<Service | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const agents = data?.agents ?? {};
   const chains = data?.chains ?? {};
+  const mcp = data?.mcp ?? {};
+  const [refreshing, setRefreshing] = useState<(McpInfo & { price: string; category: Category }) | null>(null);
 
   const pick = (t: Template) => {
     setTemplate(t);
     setEditing(null);
+    setRefreshing(null);
     setSaved(null);
   };
   const done = (s: Service) => {
     setSaved(`${s.name} is listed (${verdict(s)}).`);
     setEditing(null);
+    void mutate();
+  };
+
+  const doneMcp = (r: McpSaved) => {
+    const parts = [`${r.listed.length} ${r.listed.length === 1 ? "tool" : "tools"} from ${r.name} ${r.listed.length === 1 ? "is" : "are"} listed`];
+    if (r.removed.length) parts.push(`${r.removed.length} the server dropped ${r.removed.length === 1 ? "was" : "were"} removed`);
+    if (r.skipped.length) parts.push(`${r.skipped.length} skipped (${r.skipped.map((s) => `${s.tool}: ${s.reason}`).join("; ")})`);
+    setSaved(parts.join(", ") + ".");
+    setRefreshing(null);
     void mutate();
   };
 
@@ -69,7 +83,7 @@ export default function SellPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-6">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {TEMPLATES.map((t) => {
               const active = template === t.id;
               return (
@@ -95,7 +109,7 @@ export default function SellPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>{editing ? `Edit ${editing.name}` : template === "llm" ? "List an LLM agent" : template === "chain" ? "List an agent chain" : "List a seller"}</CardTitle>
+              <CardTitle>{editing ? `Edit ${editing.name}` : template === "llm" ? "List an LLM agent" : template === "chain" ? "List an agent chain" : template === "mcp" ? (refreshing ? `Refresh ${refreshing.serverId}` : "Sell an MCP server's tools") : "List a seller"}</CardTitle>
             </CardHeader>
             <CardContent>
               {template === "llm" ? (
@@ -107,6 +121,13 @@ export default function SellPage() {
                   info={editing ? agents[editing.id] : undefined}
                   onCancel={() => setEditing(null)}
                   onSaved={done}
+                />
+              ) : template === "mcp" ? (
+                <McpServerForm
+                  key={`mcp:${refreshing?.serverId ?? "new"}`}
+                  refresh={refreshing}
+                  onCancel={() => setRefreshing(null)}
+                  onSaved={doneMcp}
                 />
               ) : template === "chain" ? (
                 <ChainForm
@@ -142,6 +163,14 @@ export default function SellPage() {
                 services={data?.services ?? []}
                 agents={agents}
                 chains={chains}
+                mcp={mcp}
+                onRefreshMcp={(info, s) => {
+                  setSaved(null);
+                  setEditing(null);
+                  setTemplate("mcp");
+                  setRefreshing({ ...info, price: s.price, category: s.category });
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
                 onEdit={(s) => {
                   setSaved(null);
                   setTemplate(chains[s.id] ? "chain" : agents[s.id] ? "llm" : "endpoint");

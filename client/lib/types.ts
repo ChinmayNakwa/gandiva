@@ -403,3 +403,29 @@ export interface AgentWalletInfo {
   plannerLlm: { host: string; model: string; hasKey: boolean } | null;
   withdrawals: { id: number; ts: string; amount_usdc: string; status: "settled" | "failed" | "unknown"; tx_hash: string | null; explorer: string | null; reason: string | null }[];
 }
+
+/** What the Sell tab may know about one MCP-tool listing. The token itself never leaves the server. */
+export interface McpInfo {
+  serverId: string;
+  url: string;
+  tool: string;
+  hasToken: boolean;
+}
+
+export interface McpToolsLoaded {
+  url: string;
+  /** The listing group name this server gets when the seller gives none. */
+  name: string;
+  hasToken: boolean;
+  tools: { name: string; description: string; usable: boolean }[];
+}
+
+export interface McpSaved {
+  serverId: string;
+  name: string;
+  url: string;
+  listed: Service[];
+  skipped: { tool: string; reason: string }[];
+  removed: string[];
+  hasToken: boolean;
+}
