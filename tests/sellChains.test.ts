@@ -34,9 +34,9 @@ const { auth } = await import("../src/auth/routes.js");
 const { registry } = await import("../src/registry/routes.js");
 const { buildSellers, sellerDefs } = await import("../src/sellers/index.js");
 const { ensureAgentWallet } = await import("../src/agents/wallet.js");
-const { fit, planChain, runChain, ChainError, MAX_CONCURRENT } = await import("../src/chains/chains.js");
-const { getChain, upsertChain } = await import("../src/chains/store.js");
-const { getService, setVerification, upsertService } = await import("../src/registry/store.js");
+const { clearStepCache, fit, planChain, runChain, ChainError, MAX_CONCURRENT, MAX_STRIKES } = await import("../src/chains/chains.js");
+const { addChainRun, chainStats, getChain, upsertChain } = await import("../src/chains/store.js");
+const { addSale, getService, setVerification, upsertService } = await import("../src/registry/store.js");
 const { ServiceError } = await import("../src/x402/paidRoute.js");
 const { validate } = await import("../src/x402/schema.js");
 const { summariseOutput } = await import("../src/sellers/schemas.js");
@@ -196,6 +196,78 @@ describe("agent chain: running", () => {
     expect(p.calls).toEqual([]);
   });
 
+  describe("protecting the chain's float", () => {
+    const input = { city: "Tokyo", currency: "GBP" };
+    const who = { payer: "0xBuyer0000000000000000000000000000000001", price: 20000n };
+    beforeEach(() => {
+      db.exec("DELETE FROM sales; DELETE FROM chain_runs");
+      clearStepCache();
+    });
+
+    it("pays no supplier for a buyer whose wallet cannot cover the price", async () => {
+      const p = fakePay();
+      const poor = deps(p.pay, { payerBalance: async () => 19_999n });
+      await expect(runChain(chainOf(plan()), input, poor, who)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/nothing was started/) });
+      const broken = deps(p.pay, { payerBalance: async () => Promise.reject(new Error("rpc down")) });
+      await expect(runChain(chainOf(plan()), input, broken, who)).rejects.toMatchObject({ status: 503, message: expect.stringMatching(/cannot check the paying wallet/) });
+      expect(p.calls).toEqual([]);
+      await expect(runChain(chainOf(plan()), input, deps(p.pay, { payerBalance: async () => 20_000n }), who)).resolves.toBeDefined();
+    });
+
+    it(`refuses a payer after ${MAX_STRIKES} payments that failed to settle in the last hour, before paying anyone`, async () => {
+      const strike = (payer: string) => addSale({ seller: "my-chain", payer, amount: "0", status: "settle_failed", reason: "insufficient funds", latencyMs: 1 });
+      for (let i = 0; i < MAX_STRIKES - 1; i++) strike(who.payer);
+      const p = fakePay();
+      await expect(runChain(chainOf(plan()), input, deps(p.pay), who)).resolves.toBeDefined();
+      strike(who.payer.toLowerCase());
+      await expect(runChain(chainOf(plan()), input, deps(p.pay), who)).rejects.toMatchObject({ status: 429, message: expect.stringMatching(/failed to settle/) });
+      // another payer, another chain, and strikes older than an hour are not held against anyone
+      await expect(runChain(chainOf(plan()), input, deps(p.pay), { ...who, payer: "0xSomeoneElse" })).resolves.toBeDefined();
+      await expect(runChain(chainOf(plan(), 13000n, "other-chain"), input, deps(p.pay), who)).resolves.toBeDefined();
+      db.prepare("UPDATE sales SET ts = ?").run(new Date(Date.now() - 2 * 3_600_000).toISOString());
+      await expect(runChain(chainOf(plan()), input, deps(p.pay), who)).resolves.toBeDefined();
+    });
+
+    it("a retry after a failed request does not pay the suppliers it already paid; a delivered request does not leave anything behind", async () => {
+      const p = fakePay();
+      let down = true;
+      const pay = (async (s: any, i: any, c: any) =>
+        down && s.id === "hindi-summary" ? { status: "failed_not_charged", ok: false, paid: 0n, asked: BigInt(s.price), reason: "down", latencyMs: 5, ledgerId: 9 } : p.pay(s, i, c)) as any;
+
+      await expect(runChain(chainOf(plan()), input, deps(pay), who)).rejects.toThrow(/step 3 failed/);
+      expect(p.calls.map((c) => c.id)).toEqual(["city-info", "fx-rates"]);
+
+      down = false;
+      const tally = { cost: 0n, stepsPaid: 0, stepsCached: 0 };
+      const out = await runChain(chainOf(plan()), input, deps(pay), { ...who, tally });
+      expect(p.calls.map((c) => c.id)).toEqual(["city-info", "fx-rates", "hindi-summary"]);
+      expect(out.hired.map((h) => [h.service, h.status, h.paid])).toEqual([["city-info", "cached", "0"], ["fx-rates", "cached", "0"], ["hindi-summary", "paid", "10000"]]);
+      expect(out.cost_units).toBe("10000");
+      expect(tally).toEqual({ cost: 10000n, stepsPaid: 1, stepsCached: 2 });
+      expect(validate(plan().outputSchema, out)).toEqual({ ok: true });
+
+      const again = fakePay();
+      await runChain(chainOf(plan()), input, deps(again.pay), who);
+      expect(again.calls.length).toBe(3);
+    });
+
+    it("never hands one buyer what another buyer's failed request paid for", async () => {
+      const p = fakePay();
+      const pay = (async (s: any, i: any, c: any) => (s.id === "hindi-summary" ? { status: "failed_not_charged", ok: false, paid: 0n, asked: BigInt(s.price), reason: "down", latencyMs: 5, ledgerId: 9 } : p.pay(s, i, c))) as any;
+      await expect(runChain(chainOf(plan()), input, deps(pay), who)).rejects.toThrow();
+      const other = fakePay();
+      await runChain(chainOf(plan()), input, deps(other.pay), { ...who, payer: "0xBuyer0000000000000000000000000000000002" });
+      expect(other.calls.length).toBe(3);
+    });
+
+    it("reports what a failed request had already paid", async () => {
+      const tally = { cost: 0n, stepsPaid: 0, stepsCached: 0 };
+      await expect(runChain(chainOf(plan(), 3000n), input, deps(fakePay().pay), { ...who, tally })).rejects.toBeInstanceOf(ServiceError);
+      expect(tally.cost).toBeGreaterThan(0n);
+      expect(tally.stepsPaid).toBeGreaterThan(0);
+    });
+  });
+
   it(`handles at most ${MAX_CONCURRENT} requests at once`, async () => {
     let release!: () => void;
     const p = fakePay(new Promise<void>((r) => (release = r)));
@@ -254,7 +326,7 @@ let bobCookie: string;
 describe("agent chain: Sell tab and paid route", () => {
   beforeEach(async () => {
     config.secretsKey = "ab".repeat(32);
-    db.exec("DELETE FROM services; DELETE FROM chain_sellers; DELETE FROM sessions; DELETE FROM auth_nonces; DELETE FROM nonces; DELETE FROM sales");
+    db.exec("DELETE FROM services; DELETE FROM chain_sellers; DELETE FROM sessions; DELETE FROM auth_nonces; DELETE FROM nonces; DELETE FROM sales; DELETE FROM chain_runs");
     fake.settleCalls = 0;
     fake.balance = 0n;
     // The three sellers the chain hires, listed and verified like the built-ins are at boot.
@@ -328,6 +400,32 @@ describe("agent chain: Sell tab and paid route", () => {
     expect(paid.status).toBe(503);
     expect(((await paid.json()) as any).error).toMatch(/out of float/);
     expect(fake.settleCalls).toBe(0);
+  });
+
+  it("a payer with too many failed settlements is turned away before any supplier is paid, and the refusal is recorded", async () => {
+    await send("POST", "/mine/chains", aliceCookie, form());
+    const payer = "0x" + "99".repeat(20);
+    for (let i = 0; i < MAX_STRIKES; i++) addSale({ seller: "tokyo-brief", payer, amount: "0", status: "settle_failed", reason: "insufficient funds", latencyMs: 1 });
+    const res = await run("tokyo-brief", { city: "Tokyo", currency: "GBP" }, "0x" + "02".repeat(32));
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as any).charged).toBe(false);
+    expect(fake.settleCalls).toBe(0);
+    expect(chainStats("tokyo-brief")).toMatchObject({ calls: 0, failures: 1, cost: "0", revenue: "0", profit: "0" });
+    expect(chainStats("tokyo-brief").recent[0]).toMatchObject({ kind: "sale", outcome: "failed", error: expect.stringMatching(/failed to settle/) });
+  });
+
+  it("keeps a run history per chain and shows calls, revenue, cost and profit in the Sell tab", async () => {
+    await send("POST", "/mine/chains", aliceCookie, form());
+    const row = (over: Record<string, unknown>) => addChainRun({ serviceId: "tokyo-brief", kind: "sale", outcome: "ok", stepsPaid: 3, stepsCached: 0, cost: 13000n, earned: 20000n, latencyMs: 40, ...over } as any);
+    row({});
+    row({});
+    row({ outcome: "failed", stepsPaid: 2, cost: 3000n, earned: 0n, error: "step 3 failed" });
+    row({ kind: "test", cost: 13000n, earned: 0n });
+    const mine = (await (await send("GET", "/mine", aliceCookie)).json()) as any;
+    expect(mine.chains["tokyo-brief"].stats).toMatchObject({ calls: 2, failures: 1, revenue: "40000", cost: "42000", profit: "-2000" });
+    expect(mine.chains["tokyo-brief"].stats.recent).toHaveLength(4);
+    expect((await send("DELETE", "/mine/services/tokyo-brief", aliceCookie)).status).toBe(200);
+    expect(chainStats("tokyo-brief").calls).toBe(0);
   });
 
   it("the paid test run reports a chain that cannot pay, without listing anything", async () => {
