@@ -63,10 +63,15 @@ export const config = {
   },
   // The agent-chain seller pays the sellers it hires from this wallet (testnet only).
   travelBriefKey: env("TRAVEL_BRIEF_KEY") as `0x${string}` | "",
-  // SellerStake: sellers stake USDC; the arbiter (this key) relays gasless stakes and slashes proven junk to refund the buyer.
+  // SellerStakeV2: sellers stake USDC; a slash needs 2 of 3 verifier signatures, is capped at 0.10 USDC and waits 30 min.
   stake: {
     contract: env("STAKE_CONTRACT") as `0x${string}` | "",
-    arbiterKey: env("ARBITER_PRIVATE_KEY") as `0x${string}` | "",
+    // Pays the gas for relayed stakes, claims and refunds. It has no powers over bonds; keep ~0.01 Base Sepolia ETH on it.
+    relayerKey: env("RELAYER_PRIVATE_KEY") as `0x${string}` | "",
+    // This server's own verifier, one of the three; the other two run elsewhere (scripts/verifier.ts).
+    verifierKey: env("SERVER_VERIFIER_KEY") as `0x${string}` | "",
+    // Signs the X-Gandiva-Receipt the built-in sellers attach to paid responses (evidence for stake claims). Holds no money.
+    receiptSignerKey: env("RECEIPT_SIGNER_KEY") as `0x${string}` | "",
   },
 };
 

@@ -30,10 +30,22 @@ const briefAddr = privateKeyToAccount(get("TRAVEL_BRIEF_KEY") as `0x${string}`).
 set("PAYTO_TRAVEL_BRIEF", briefAddr);
 rows.push(["travel-brief", briefAddr]);
 
-// The stake arbiter deploys SellerStake, relays gasless stakes and slashes junk sellers to refund buyers. It pays gas, so it needs ETH.
-if (!get("ARBITER_PRIVATE_KEY")) set("ARBITER_PRIVATE_KEY", generatePrivateKey());
-const arbiterAddr = privateKeyToAccount(get("ARBITER_PRIVATE_KEY") as `0x${string}`).address;
-rows.push(["stake arbiter", arbiterAddr]);
+// The stake relayer deploys SellerStakeV2 and pays the gas for stakes, claims and refunds; it has no other powers. It takes
+// over the old arbiter key, so the ETH already on that address keeps working.
+if (!get("RELAYER_PRIVATE_KEY")) set("RELAYER_PRIVATE_KEY", get("ARBITER_PRIVATE_KEY") || generatePrivateKey());
+const relayerAddr = privateKeyToAccount(get("RELAYER_PRIVATE_KEY") as `0x${string}`).address;
+rows.push(["stake relayer", relayerAddr]);
+
+// Two of the three SellerStakeV2 verifiers, so a local server plus `npm run verifier` can pass a claim. In production each
+// verifier key lives on its own host (Render, GitHub Actions, your machine).
+for (const [k, label] of [["SERVER_VERIFIER_KEY", "server verifier"], ["VERIFIER_KEY", "local verifier"]] as const) {
+  if (!get(k)) set(k, generatePrivateKey());
+  rows.push([label, privateKeyToAccount(get(k) as `0x${string}`).address]);
+}
+
+// Signs the receipts the built-in sellers attach to paid responses (evidence for stake claims). Holds no money.
+if (!get("RECEIPT_SIGNER_KEY")) set("RECEIPT_SIGNER_KEY", generatePrivateKey());
+rows.push(["receipt signer", privateKeyToAccount(get("RECEIPT_SIGNER_KEY") as `0x${string}`).address]);
 
 writeFileSync(ENV, text);
 console.log("Testnet wallets (Base Sepolia). Keys are in .env, which is gitignored.\n");
@@ -41,4 +53,4 @@ for (const [name, addr] of rows) console.log(`  ${name.padEnd(16)} ${addr}`);
 console.log(`\nFund the buyer with testnet USDC: https://faucet.circle.com  (network: Base Sepolia, address: ${rows[0][1]})`);
 console.log("No ETH is needed: the x402 facilitator pays gas for EIP-3009 transfers.");
 console.log(`The travel-brief seller hires other sellers and pays them first, so it also needs a little USDC float: ${briefAddr}`);
-console.log(`The stake arbiter pays gas for SellerStake, so it needs a little Base Sepolia ETH (about 0.01): ${arbiterAddr}`);
+console.log(`The stake relayer pays gas for SellerStakeV2, so it needs a little Base Sepolia ETH (about 0.01): ${relayerAddr}`);

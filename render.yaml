@@ -55,10 +55,14 @@ services:
         sync: false
       - key: PAYTO_TRAVEL_BRIEF
         sync: false
-      # Optional: SellerStake (deploy the contract first with `npm run stake:deploy`)
+      # Optional: SellerStakeV2 (deploy the contract first with `npm run stake:deploy`)
       - key: STAKE_CONTRACT
         sync: false
-      - key: ARBITER_PRIVATE_KEY
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: RECEIPT_SIGNER_KEY
+        sync: false
+      - key: SERVER_VERIFIER_KEY
         sync: false
       - key: FACILITATOR_URL
         value: https://x402.org/facilitator

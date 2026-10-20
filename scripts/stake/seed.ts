@@ -1,5 +1,6 @@
-// Stakes part of each built-in seller's testnet earnings into SellerStake, through the running server's relay.
-// The sellers sign gasless EIP-3009 authorisations; the server's arbiter pays the gas.
+// Makes each built-in seller slashable and staked, through the running server's relay: it registers RECEIPT_SIGNER_KEY as
+// the seller's receipt signer, then stakes part of its testnet earnings into SellerStakeV2.
+// The sellers sign gasless messages with their SELLER_KEY_*; the server's relayer pays the gas.
 // Usage: npm run stake:seed   (with the server running; GANDIVA_URL to target a public one)
 import "dotenv/config";
 import { createPublicClient, erc20Abi, http, type Hex } from "viem";
@@ -25,11 +26,25 @@ if (!info.enabled) {
   console.log("Staking is not enabled on the server (deploy with npm run stake:deploy, then restart the server).");
   process.exit(1);
 }
+if (!config.stake.receiptSignerKey) {
+  console.log("RECEIPT_SIGNER_KEY is not set (run npm run wallets:new): sellers would stake but stay unslashable.");
+  process.exit(1);
+}
+const receiptSigner = privateKeyToAccount(config.stake.receiptSignerKey).address;
+
 for (const [name, target] of plan) {
   const key = process.env[`SELLER_KEY_${name}`] as Hex | undefined;
   if (!key) continue;
-  const address = privateKeyToAccount(key).address;
+  const seller = privateKeyToAccount(key);
+  const address = seller.address;
   const pos = await api<any>(`/registry/stake/${address}`);
+  if (pos.receiptSigner?.toLowerCase() !== receiptSigner.toLowerCase()) {
+    const typed = await api<any>("/registry/stake/receipt-signer/prepare", { seller: address, signer: receiptSigner });
+    const message = { ...typed.message, nonce: BigInt(typed.message.nonce), deadline: BigInt(typed.message.deadline) };
+    const signature = await seller.signTypedData({ ...typed, domain: { ...typed.domain, chainId: BigInt(typed.domain.chainId) }, message });
+    const r = await api<any>("/registry/stake/receipt-signer", { seller: address, signer: receiptSigner, deadline: typed.message.deadline, signature });
+    console.log(`${name.toLowerCase().padEnd(14)} receipts now signed by ${receiptSigner}  ${r.explorer}`);
+  }
   const need = target - BigInt(pos.staked);
   if (need <= 0n) {
     console.log(`${name.toLowerCase().padEnd(14)} already staked ${fromUnits(pos.staked)} USDC`);

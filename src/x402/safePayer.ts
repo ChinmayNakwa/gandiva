@@ -3,9 +3,12 @@ import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePayment
 import type { PaymentRequired, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { baseSepolia } from "viem/chains";
 import { fromUnits, NETWORK } from "../config.js";
 import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
-import { slashForJunk } from "../stake/index.js";
+import { fileClaim } from "../stake/claims.js";
+import { saveEvidence } from "../stake/evidence.js";
+import { RECEIPT_HEADER } from "../stake/receipt.js";
 import type { BudgetLedger } from "./budget.js";
 import { endpointBlockedReason } from "./endpointGuard.js";
 import { validate } from "./schema.js";
@@ -71,8 +74,7 @@ export function buildRequest(service: Pick<Service, "endpoint" | "method">, inpu
   };
 }
 
-async function readBody(res: Response) {
-  const text = await res.text();
+function parseBody(text: string) {
   try {
     return JSON.parse(text);
   } catch {
@@ -137,14 +139,30 @@ export class SafePayer {
     const base = { runId: ctx.runId, buyer: this.address, seller: service.payTo, serviceId: service.id, serviceName: service.name, endpoint: service.endpoint, listed: service.price };
     let auth: LedgerEntry["auth"] = null;
     let capHold: CapReservation | null = null;
+    // The paid response as it arrived (body null if it was lost), kept as evidence when the call is rejected after paying.
+    let paidResponse: { status: number; body: string | null; receipt: string | null } | undefined;
     const finish = (r: Omit<CallResult, "latencyMs" | "ledgerId" | "ok">): CallResult => {
       const latencyMs = Date.now() - started;
       try {
         const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs, auth });
-        // Proven seller fault after taking the money (broke its own schema, or charged for an error): refund from its stake.
-        // A lost response body is not proof, since the fault may be on our side of the network.
-        if (r.status === "paid_output_rejected" && /^(output breaks listed schema|seller settled but returned)/.test(r.reason ?? "")) {
-          void slashForJunk({ ledgerId: row.id, seller: service.payTo, buyer: this.address, paid: r.paid, txHash: r.txHash, service: service.name });
+        // Paid and rejected: keep the evidence and file a stake claim (the verifiers decide whether it holds).
+        if (r.status === "paid_output_rejected" && paidResponse) {
+          try {
+            const target = new URL(url);
+            const evidence = saveEvidence({
+              chainId: baseSepolia.id,
+              ledgerId: row.id,
+              serviceId: service.id,
+              reason: r.reason ?? "",
+              payment: { payTo: service.payTo, payer: this.address, amount: r.paid.toString(), nonce: auth?.nonce ?? null, txHash: r.txHash ?? null },
+              request: { method: init.method ?? "GET", path: target.pathname + target.search, body: typeof init.body === "string" ? init.body : "" },
+              outputSchema: service.outputSchema,
+              response: paidResponse,
+            });
+            fileClaim({ ledgerId: row.id, evidence, seller: service.payTo, buyer: this.address });
+          } catch (err: any) {
+            console.warn(`[payer] could not store evidence for ledger #${row.id}: ${err?.message ?? err}`);
+          }
         }
         return { ...r, ok: r.status === "paid", latencyMs, ledgerId: row.id };
       } finally {
@@ -173,7 +191,7 @@ export class SafePayer {
     }
 
     if (first.status !== 402) {
-      const body = await readBody(first);
+      const body = parseBody(await first.text());
       if (first.ok) return finish({ status: "failed_not_charged", paid: 0n, data: body, reason: "seller did not ask for payment (expected 402)" });
       return finish({ status: "failed_not_charged", paid: 0n, reason: `seller returned ${first.status} before payment: ${JSON.stringify(body).slice(0, 200)}` });
     }
@@ -244,9 +262,10 @@ export class SafePayer {
       } catch {}
     }
     const charged = Boolean(settle?.success);
-    let body: any;
+    paidResponse = { status: paidRes.status, body: null, receipt: paidRes.headers.get(RECEIPT_HEADER) };
+    let text: string;
     try {
-      body = await readBody(paidRes);
+      text = await paidRes.text();
     } catch (err: any) {
       // Headers arrived but the body did not (timeout / dropped connection): same ambiguity as a missing answer.
       if (charged) {
@@ -256,6 +275,8 @@ export class SafePayer {
       reservation.commit();
       return finish({ status: "unconfirmed", paid: 0n, asked, reason: `response body lost after signing, outcome pending chain check: ${err?.message ?? err}` });
     }
+    paidResponse.body = text;
+    const body = parseBody(text);
 
     if (!paidRes.ok) {
       if (charged) {

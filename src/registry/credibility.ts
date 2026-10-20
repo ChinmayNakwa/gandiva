@@ -3,7 +3,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { config, fromUnits, USDC_ADDRESS } from "../config.js";
 import { db } from "../db.js";
-import { slashedTotal, stakeOf } from "../stake/index.js";
+import { slashedTotal } from "../stake/claims.js";
+import { stakeOf, type StakePosition } from "../stake/index.js";
 import { getService, listServices, reputationFor, SEED_OWNER, setCredibilityLookup, type Service, type ServiceWithReputation } from "./store.js";
 
 /**
@@ -89,6 +90,29 @@ async function walletHistory(address: string) {
   }
 }
 
+/**
+ * Full credit from 0.05 USDC bonded. A bond nobody can slash (no receipt signer) is worth at most half; one being unstaked
+ * is worth nothing, since it is about to leave. Each executed slash costs 5 points.
+ */
+export function stakeCheck(stake: Pick<StakePosition, "staked" | "unlockAt" | "slashable">, slashed: { count: number; amount: bigint }): CredibilityCheck {
+  const staked = BigInt(stake.staked);
+  const cap = stake.unlockAt ? 0 : stake.slashable ? 20 : 10;
+  const points = Math.max(0, Math.min(cap, Math.round(Number(staked) / 2_500)) - slashed.count * 5);
+  const detail =
+    staked === 0n
+      ? "nothing staked"
+      : `${fromUnits(staked)} USDC bonded in SellerStakeV2` +
+        (stake.unlockAt ? ", unstaking (counts 0 until it is staked again)" : stake.slashable ? ", slashable by 2 of 3 verifiers; full credit from 0.05" : ", but no receipt signer so it cannot be slashed (at most 10 of 20)");
+  return {
+    id: "stake",
+    label: "Stake (skin in the game)",
+    status: points >= 20 ? "pass" : points > 0 ? "partial" : "fail",
+    points,
+    max: 20,
+    detail: detail + (slashed.count ? `; slashed ${slashed.count}x for junk (${fromUnits(slashed.amount)} USDC refunded to buyers)` : ""),
+  };
+}
+
 const listedAt = (id: string) => (db.prepare("SELECT created_at FROM services WHERE id = ?").get(id) as { created_at: string } | undefined)?.created_at;
 
 /** Scores one listing. Pure apart from the chain reads (stake, wallet), which degrade to "unknown" when unreachable. */
@@ -132,18 +156,7 @@ export async function computeCredibility(s: ServiceWithReputation, now = Date.no
     detail: rep.attempts ? `${rep.successes}/${rep.attempts} calls delivered valid output (${Math.round(rep.successRate * 100)}%); full credit from 10 calls` : "no paid calls yet",
   });
 
-  const slashed = slashedTotal(s.payTo);
-  const stakePoints = Math.max(0, Math.min(20, Math.round(Number(staked) / 2_500)) - slashed.count * 5);
-  checks.push({
-    id: "stake",
-    label: "Stake (skin in the game)",
-    status: staked === 0n ? "fail" : stakePoints >= 20 ? "pass" : "partial",
-    points: stakePoints,
-    max: 20,
-    detail:
-      (staked ? `${fromUnits(staked)} USDC bonded in SellerStake${stake.unlockAt ? ", unstaking" : ""}; full credit from 0.05` : "nothing staked") +
-      (slashed.count ? `; slashed ${slashed.count}x for junk (${fromUnits(slashed.amount)} USDC refunded to buyers)` : ""),
-  });
+  checks.push(stakeCheck(stake, slashedTotal(s.payTo)));
 
   const w = await walletHistory(s.payTo);
   checks.push(

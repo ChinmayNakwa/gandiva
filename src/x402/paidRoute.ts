@@ -2,9 +2,11 @@ import type { Context } from "hono";
 import { createHash } from "node:crypto";
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
+import type { Hex } from "viem";
 import { config, NETWORK, USDC_ADDRESS, USDC_EIP712 } from "../config.js";
 import { db } from "../db.js";
 import { addSale } from "../registry/store.js";
+import { outputHash, RECEIPT_HEADER, requestHash, schemaHash, signReceipt } from "../stake/receipt.js";
 import { getResourceServer } from "./resourceServer.js";
 import { validate, validateInput } from "./schema.js";
 
@@ -73,9 +75,17 @@ export function paidRoute<I = any, O = any>(opts: PaidRouteOptions<I, O>) {
     const url = new URL(c.req.url);
     const resourceUrl = config.publicBaseUrl + url.pathname + url.search;
 
+    // The raw body is kept so the receipt can hash exactly what the buyer sent.
+    const rawBody = c.req.method === "GET" ? "" : await c.req.text().catch(() => "");
     let input: any;
     if (c.req.method === "GET") input = { ...c.req.query() };
-    else input = await c.req.json().catch(() => ({}));
+    else {
+      try {
+        input = JSON.parse(rawBody);
+      } catch {
+        input = {};
+      }
+    }
     const inputCheck = validateInput(opts.inputSchema, input);
     if (!inputCheck.ok) return c.json({ error: `invalid input: ${inputCheck.error}` }, 400);
 
@@ -166,6 +176,26 @@ export function paidRoute<I = any, O = any>(opts: PaidRouteOptions<I, O>) {
     markSettled.run(settle.transaction, key);
     addSale({ seller: opts.seller, payer: settle.payer ?? payer, amount: matched.amount, txHash: settle.transaction, status: "paid", latencyMs: Date.now() - started });
     c.header("PAYMENT-RESPONSE", encodePaymentResponseHeader(settle));
-    return c.json(output as any, 200);
+    // Serialised once, so the receipt's outputHash covers the exact bytes sent.
+    const bodyText = JSON.stringify(output);
+    const paymentNonce = (payload.payload as any)?.authorization?.nonce;
+    if (config.stake.receiptSignerKey && payer && /^0x[0-9a-fA-F]{64}$/.test(paymentNonce ?? "")) {
+      try {
+        const receipt = {
+          payTo: opts.payTo as Hex,
+          payer: payer as Hex,
+          paymentNonce,
+          requestHash: requestHash(c.req.method, url.pathname + url.search, rawBody),
+          outputHash: outputHash(bodyText),
+          schemaHash: schemaHash(opts.outputSchema),
+          httpStatus: 200,
+        };
+        c.header(RECEIPT_HEADER, await signReceipt(config.stake.receiptSignerKey, receipt));
+      } catch (err: any) {
+        // The buyer has paid by now: a receipt problem must never cost them the response.
+        console.warn(`[${opts.seller}] could not sign the receipt: ${err?.message ?? err}`);
+      }
+    }
+    return c.body(bodyText, 200, { "Content-Type": "application/json" });
   };
 }

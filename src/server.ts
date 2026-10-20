@@ -10,6 +10,7 @@ import { llmAvailable } from "./llm.js";
 import { mcp } from "./mcp/server.js";
 import { startCredibilityRefresh } from "./registry/credibility.js";
 import { verifyBuiltIns } from "./registry/probe.js";
+import { startClaimWorker } from "./stake/claims.js";
 import { stakeEnabled } from "./stake/index.js";
 import { registry } from "./registry/routes.js";
 import { activeSellerDefs, buildSellers, seedRegistry } from "./sellers/index.js";
@@ -57,6 +58,7 @@ app.get("/healthz", (c) => c.json({ ok: true }));
 
 seedRegistry(active);
 startResolver();
+startClaimWorker();
 serve({ fetch: app.fetch, port: config.port }, () => {
   console.log(`Gandiva running on http://localhost:${config.port}  (public: ${config.publicBaseUrl})`);
   console.log(`  web        ${config.publicBaseUrl}/`);
@@ -73,7 +75,7 @@ serve({ fetch: app.fetch, port: config.port }, () => {
     .then(() => console.log("  registry   built-in listings probed"))
     .catch((err) => console.error(`  registry   probing built-ins failed: ${err.message}`))
     .finally(() => startCredibilityRefresh());
-  if (stakeEnabled()) console.log(`  stake      SellerStake ${config.stake.contract}`);
+  if (stakeEnabled()) console.log(`  stake      SellerStakeV2 ${config.stake.contract}${config.stake.verifierKey ? "" : "  (no SERVER_VERIFIER_KEY: claims need both outside verifiers)"}`);
 });
 
 getResourceServer()
