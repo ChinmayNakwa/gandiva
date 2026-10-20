@@ -14,6 +14,7 @@ import { isMcpService, listMcpFor } from "../mcpseller/servers.js";
 import { hostedRoutes } from "../hosted/routes.js";
 import { collectSales, sellerPorts } from "../sellers/supervisor.js";
 import { stakeRoutes } from "../stake/routes.js";
+import { summariseAttacks } from "./attacks.js";
 import { endpointBlockedReason, verifyService } from "./probe.js";
 import { groupServices } from "../buyer/catalogue.js";
 import { stakeOf } from "../stake/index.js";
@@ -216,6 +217,14 @@ registry.get("/ledger", (c) => {
 
 // Money taken back out of agent wallets (outgoing transfers that are not seller payments); scripts/reconcile.ts needs them.
 registry.get("/withdrawals", (c) => c.json({ withdrawals: listWithdrawals(c.req.query("buyer")) }));
+
+// Every attack the buyer has stopped so far, by kind (the landing page scoreboard).
+registry.get("/attacks", async (c) => {
+  // shortcut: replays are counted from the latest 2000 sales only; query sales directly if that ever matters.
+  const sales = sellerPorts.size ? await collectSales(listSales(2000), sellerPorts, 2000) : listSales(2000);
+  const s = summariseAttacks(sales);
+  return c.json({ ...s, notPaidUsdc: fromUnits(s.notPaidUnits) });
+});
 
 registry.get("/sales", async (c) => {
   const rows = sellerPorts.size ? await collectSales(listSales(), sellerPorts) : listSales();
