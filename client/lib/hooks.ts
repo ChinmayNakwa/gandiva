@@ -2,6 +2,7 @@ import useSWR from "swr";
 import { fetcher, servicesUrl, type ServiceQuery } from "./api";
 import type {
   AgentWalletInfo,
+  AttackSummary,
   CompareResponse,
   Info,
   QueueStatus,
@@ -34,6 +35,10 @@ export function useSales() {
   return useSWR<SalesResponse>("/registry/sales", fetcher, {
     refreshInterval: 4000,
   });
+}
+
+export function useAttacks() {
+  return useSWR<AttackSummary>("/registry/attacks", fetcher, { refreshInterval: 10000 });
 }
 
 export function useRun(id?: string | null) {

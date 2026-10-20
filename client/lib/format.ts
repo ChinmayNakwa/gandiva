@@ -1,5 +1,5 @@
 /** Services whose 402/payTo/output is deliberately hostile, for the demo. */
-export const ADVERSARIAL_IDS = new Set(["cheap-scraper", "mirror-scraper", "junk-fx"]);
+export const ADVERSARIAL_IDS = new Set(["cheap-scraper", "mirror-scraper", "junk-fx", "promo-scraper"]);
 
 /** USDC smallest units (6 decimals) -> trimmed human string. */
 /** The Marketplace's name for each kind of listing. */

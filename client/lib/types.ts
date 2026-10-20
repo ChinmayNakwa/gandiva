@@ -340,6 +340,16 @@ export interface SalesResponse {
   sales: Sale[];
 }
 
+export type AttackKind = "overcharge" | "wrong_payto" | "bad_terms" | "unsafe_endpoint" | "junk_output" | "prompt_injection" | "replay";
+
+/** /registry/attacks: every attack the buyer stopped, by kind. */
+export interface AttackSummary {
+  attacks: { kind: AttackKind; label: string; count: number; lastAt: string | null }[];
+  total: number;
+  notPaidUnits: string;
+  notPaidUsdc: string;
+}
+
 /** Settings of a Sell-tab LLM agent. The API key itself is never sent to the browser. */
 /** The parts of a JSON Schema the Sell tab reads. */
 export interface JsonSchema {
