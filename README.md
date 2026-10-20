@@ -205,6 +205,8 @@ Node.js, TypeScript, Hono, SQLite (Litestream), Next.js 16, Tailwind v4, x402 SD
 
 The credibility score, seller comparison, the payment scheduler, the safety-check scripts and the deploy steps are in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
 
+Seller stake (a USDC bond that 2 of 3 independent verifiers can use to refund a buyer who paid for junk) is in **[docs/STAKE.md](docs/STAKE.md)**.
+
 ## License
 
 [ISC](LICENSE)

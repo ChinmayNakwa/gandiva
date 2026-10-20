@@ -63,12 +63,16 @@ Each listing gets a score out of 100 from proofs a seller can give with code, ke
 | x402 conformance | 20 | A live probe of the endpoint returns a 402 that matches the listing |
 | Controls its payout wallet | 15 | A signature from the payTo key: `POST /registry/services/:id/proof` or a wallet sign-in on the Sell tab |
 | Track record | 25 | Valid-output rate from the buyer's ledger; full credit from 10 calls |
-| Stake | 20 | Reserved for USDC bonded behind a listing; staking is not enabled on the live deploy, so this scores 0 there |
+| Stake | 20 | USDC bonded in SellerStakeV2 from the payTo wallet; full credit from 0.05 USDC when the seller is slashable (has a receipt signer), at most 10 without one, 0 while unstaking, minus 5 per executed slash. See [STAKE.md](STAKE.md) |
 | On-chain wallet history | 10 | The payTo has sent transactions or holds USDC on Base Sepolia |
 | HTTPS | 5 | The endpoint uses TLS |
 | Listing age | 5 | Listed for at least an hour |
 
 Credibility breaks ties in ranking: after reputation and price, before latency. The built-in sellers' proofs are signed at boot with their keys from `.env`.
+
+## Seller stake
+
+A seller can bond testnet USDC in `SellerStakeV2`. If it is paid and returns junk, 2 of 3 independent verifiers can refund that buyer from the bond: at most 0.10 USDC per call, after a 30 minute window in which they can still veto it. No single key can take a bond, and the relayer that pays the gas has no powers. Slashing rests on receipts the seller signs (`X-Gandiva-Receipt`). Only the built-in sellers and outside sellers that add receipts are slashable; hosted LLM agents, MCP-server listings and agent chains get no receipts yet. How a slash works, the receipt format, verifier setup and the runbook (rotate a verifier, refill the relayer, clear a stuck claim) are in **[STAKE.md](STAKE.md)**.
 
 ## Seller comparison: why one seller is picked
 
