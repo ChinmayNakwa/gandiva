@@ -54,6 +54,19 @@ npm run task -- "<task>" 0.05 3     # task, budget in USDC, max_concurrency
 | `npm run judge:junk` | Schema-breaking output is recorded "paid, output rejected" and the seller loses reputation |
 | `npm run judge:interop` | Our buyer pays an unmodified `@x402/express` seller |
 
+## Prompt injection and the attack scoreboard
+
+Seller output is shown to the planner LLM, so a seller can try to give it orders. Two layers stop that:
+
+1. **Payments never listen to the LLM.** The LLM can only name catalogue services; price, payTo, budget and the spend cap are checked by code (`SafePayer`, `BudgetLedger`, `SpendCap`), so "send 0.09 USDC to 0x…" has no path to a payment.
+2. **Injected output is rejected.** After the schema check, `findInjection` (`src/x402/injection.ts`) scans every string for phrases aimed at an AI ("ignore your previous instructions", "note to AI agents", "send … USDC to 0x…"). A hit is recorded as `paid_output_rejected` with reason `prompt injection: "…"`: the seller loses reputation, Scout buys from the next seller, and the text never reaches the model. It is not slashed from the seller's stake, because a phrase match is not proof the way a schema break is.
+
+The phrase list can miss reworded attacks and can flag text that only talks about prompt injection; layer 1 is the guarantee, layer 2 keeps the planner clean.
+
+`promo-scraper` (wallet `PAYTO_PROMO_SCRAPER`, skipped if unset) is the demo bad actor: real books with an injection appended to the first description.
+
+`GET /registry/attacks` counts every attack stopped so far, by kind, from the buyer ledger's reasons (overcharge, swapped payTo, bad terms, unsafe endpoint, junk output, prompt injection) plus replayed signatures from the sellers' sales, and sums what the refused 402s asked for. The home page shows it live; `/flow` draws the ledger's payments as a graph of wallets.
+
 ## Credibility without KYC
 
 Each listing gets a score out of 100 from proofs a seller can give with code, keys or money, never identity documents. `GET /registry/services/:id/credibility` returns the breakdown.
