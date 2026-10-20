@@ -16,7 +16,7 @@ describe("catalogue grouping", () => {
 
   it("puts sellers with identical category and schemas into one group", () => {
     const scrapers = groups.find((g) => g.category === "scraping")!;
-    expect([...scrapers.memberIds].sort()).toEqual(["cheap-scraper", "mirror-scraper", "shelf-scraper"]);
+    expect([...scrapers.memberIds].sort()).toEqual(["cheap-scraper", "mirror-scraper", "promo-scraper", "shelf-scraper"]);
     const fx = groups.find((g) => g.memberIds.includes("fx-rates"))!;
     expect([...fx.memberIds].sort()).toEqual(["fx-rates", "junk-fx"]);
     expect(fx.minPrice).toBe(800n);
@@ -39,7 +39,7 @@ describe("catalogue grouping", () => {
 
   it("renders a compact catalogue that shows batching limits", () => {
     const text = renderCatalogue(groups);
-    expect(text).toContain("interchangeable sellers: 3");
+    expect(text).toContain("interchangeable sellers: 4");
     expect(text).toContain("input: {texts: [string (max 6000 chars)] (1-2 items)}");
     expect(text).toContain("0.000800-0.001000 USDC");
     expect(text).toContain("input: {page: int 1..1000}");

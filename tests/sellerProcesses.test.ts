@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // Seller wallets are read when config loads, so set them before the app modules are imported.
 vi.hoisted(() => {
   const addr = (n: number) => `0x${String(n).repeat(40)}`;
-  const keys = ["SHELF_SCRAPER", "CHEAP_SCRAPER", "FX_RATES", "HINDI_SUMMARY", "CITY_INFO", "SENTIMENT", "JUNK_FX", "MIRROR_SCRAPER", "ATTACKER"];
+  const keys = ["SHELF_SCRAPER", "CHEAP_SCRAPER", "FX_RATES", "HINDI_SUMMARY", "CITY_INFO", "SENTIMENT", "JUNK_FX", "MIRROR_SCRAPER", "ATTACKER", "PROMO_SCRAPER"];
   keys.forEach((k, i) => (process.env[`PAYTO_${k}`] = addr(i + 1)));
   process.env.SEED_ADVERSARIAL = "true";
 });
