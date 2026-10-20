@@ -1,0 +1,35 @@
+# One of the three SellerStakeV2 verifiers (the others: the API on Render, and `npm run verifier` on a maintainer's machine).
+# Every 5 minutes it re-checks the open stake claims on its own and signs the ones the evidence supports.
+# Settings -> Secrets and variables -> Actions: secret VERIFIER_KEY; variables GANDIVA_URL and STAKE_CONTRACT.
+# The job is skipped while STAKE_CONTRACT is empty.
+name: stake verifier
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: verifier
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: vars.STAKE_CONTRACT != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verifier -- --once
+        env:
+          VERIFIER_KEY: ${{ secrets.VERIFIER_KEY }}
+          GANDIVA_URL: ${{ vars.GANDIVA_URL }}
+          STAKE_CONTRACT: ${{ vars.STAKE_CONTRACT }}

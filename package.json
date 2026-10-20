@@ -17,6 +17,7 @@
     "stake:compile": "tsx scripts/stake/compile.ts",
     "stake:deploy": "tsx scripts/stake/deploy.ts",
     "stake:seed": "tsx scripts/stake/seed.ts",
+    "verifier": "tsx scripts/verifier.ts",
     "task": "tsx scripts/run-task.ts",
     "reconcile": "tsx scripts/reconcile.ts",
     "judge:replay": "tsx scripts/judge/replay.ts",
