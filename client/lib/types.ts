@@ -67,6 +67,10 @@ export interface StakePosition {
   staked: string;
   stakedUsdc: string;
   unlockAt: number;
+  /** Key that signs the seller's receipts; null = none registered. */
+  receiptSigner: string | null;
+  /** A receipt signer is registered, so 2 of 3 verifiers can slash the bond for junk. */
+  slashable: boolean;
 }
 
 export type CompareMetric = "reputation" | "successRate" | "cheapness" | "speed" | "credibility" | "stake";
@@ -101,12 +105,41 @@ export interface CompareResponse {
 export interface StakeOverview {
   enabled: boolean;
   contract?: string;
-  arbiter?: string;
+  /** Pays the gas for every relayed call; it has no powers over the bonds. */
+  relayer?: { address: string; eth: string; low: boolean };
+  verifiers?: string[];
+  claims?: { open: number; oldestOpenMinutes: number | null };
   cooldownSeconds?: number;
   totalStakedUsdc?: string;
   minStake?: string;
   explorer?: string;
   sellers: (StakePosition & { payTo: string; slashedCount: number; slashed: string })[];
+}
+
+/** A junk-output claim against a seller's bond. Kind 1 rests on the seller's own receipt; kind 2 (no valid receipt) can be rebutted. */
+export interface StakeClaim {
+  id: number;
+  ledgerId: number;
+  evidence: string;
+  seller: string;
+  buyer: string;
+  state: "new" | "open" | "proposed" | "executed" | "vetoed" | "expired" | "rejected" | "not_slashable";
+  kind: 1 | 2 | null;
+  amount: string | null;
+  claimId: string | null;
+  /** Unix ms when the refund can execute (proposed claims). */
+  executeAfter: number | null;
+  signatures: string[];
+  rebuttal: { receipt: string; body: string } | null;
+  /** Unix seconds until which verifiers can veto after a rebuttal. */
+  vetoDeadline: number | null;
+  vetoSignatures: string[];
+  paid: string | null;
+  proposeTx: string | null;
+  closeTx: string | null;
+  lastError: string | null;
+  createdAt: number;
+  closedAt: number | null;
 }
 
 export type PriorityFactor = "retry" | "waited" | "progress" | "reliability" | "smallness";
