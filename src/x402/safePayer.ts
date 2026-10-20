@@ -11,6 +11,7 @@ import { saveEvidence } from "../stake/evidence.js";
 import { RECEIPT_HEADER } from "../stake/receipt.js";
 import type { BudgetLedger } from "./budget.js";
 import { endpointBlockedReason } from "./endpointGuard.js";
+import { findInjection } from "./injection.js";
 import { validate } from "./schema.js";
 import { spendCap as sharedCap, type CapReservation, type SpendCap } from "./spendCap.js";
 
@@ -145,8 +146,9 @@ export class SafePayer {
       const latencyMs = Date.now() - started;
       try {
         const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs, auth });
-        // Paid and rejected: keep the evidence and file a stake claim (the verifiers decide whether it holds).
-        if (r.status === "paid_output_rejected" && paidResponse) {
+        // Paid and rejected: keep the evidence and file a stake claim (the verifiers decide whether it holds). A phrase
+        // match is not proof, so prompt-injection rejects get neither.
+        if (r.status === "paid_output_rejected" && paidResponse && !r.reason?.startsWith("prompt injection")) {
           try {
             const target = new URL(url);
             const evidence = saveEvidence({
@@ -305,6 +307,11 @@ export class SafePayer {
     const out = validate(service.outputSchema, body);
     if (!out.ok) {
       return finish({ status: "paid_output_rejected", paid: asked, asked, txHash: settle?.transaction, reason: `output breaks listed schema: ${out.error}` });
+    }
+    // Valid shape but orders for the AI inside: rejected like junk, but not slashed (a phrase match is not proof).
+    const injected = findInjection(body);
+    if (injected) {
+      return finish({ status: "paid_output_rejected", paid: asked, asked, txHash: settle?.transaction, reason: `prompt injection: "${injected}"` });
     }
     return finish({ status: "paid", paid: asked, asked, data: body, txHash: settle?.transaction });
   }

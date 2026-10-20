@@ -15,7 +15,7 @@ const rows: [string, string][] = [];
 if (!get("BUYER_PRIVATE_KEY")) set("BUYER_PRIVATE_KEY", generatePrivateKey());
 rows.push(["buyer (Scout)", privateKeyToAccount(get("BUYER_PRIVATE_KEY") as `0x${string}`).address]);
 
-const sellers = ["SHELF_SCRAPER", "CHEAP_SCRAPER", "FX_RATES", "HINDI_SUMMARY", "CITY_INFO", "SENTIMENT", "JUNK_FX", "MIRROR_SCRAPER", "ATTACKER"];
+const sellers = ["SHELF_SCRAPER", "CHEAP_SCRAPER", "FX_RATES", "HINDI_SUMMARY", "CITY_INFO", "SENTIMENT", "JUNK_FX", "MIRROR_SCRAPER", "ATTACKER", "PROMO_SCRAPER"];
 for (const s of sellers) {
   // Seller keys are stored only so the testnet USDC they earn can be moved later; the server never loads them.
   if (!get(`SELLER_KEY_${s}`)) set(`SELLER_KEY_${s}`, generatePrivateKey());

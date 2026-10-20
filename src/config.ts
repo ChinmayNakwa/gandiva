@@ -58,6 +58,7 @@ export const config = {
     sentiment: env("PAYTO_SENTIMENT"),
     junkFx: env("PAYTO_JUNK_FX"),
     mirrorScraper: env("PAYTO_MIRROR_SCRAPER"),
+    promoScraper: env("PAYTO_PROMO_SCRAPER"),
     attacker: env("PAYTO_ATTACKER"),
     travelBrief: env("PAYTO_TRAVEL_BRIEF"),
   },
