@@ -1,8 +1,10 @@
 import { encodePaymentSignatureHeader } from "@x402/core/http";
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NETWORK, USDC_ADDRESS } from "../src/config.js";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { config, NETWORK, USDC_ADDRESS } from "../src/config.js";
 import { db } from "../src/db.js";
+import { decodeReceipt, outputHash, RECEIPT_HEADER, receiptSignerOf, requestHash, schemaHash } from "../src/stake/receipt.js";
 import { accept, SELLER } from "./helpers.js";
 
 // A fake facilitator-backed resource server: the unit under test is our paidRoute ordering (claim nonce -> verify -> run -> settle).
@@ -141,6 +143,45 @@ describe("seller: no service, no charge", () => {
     const res = await call(makeApp(async () => ({ rate: 1 })), nonce(4));
     expect(res.status).toBe(402);
     expect(fake.settleCalls).toBe(0);
+  });
+});
+
+describe("seller: signed receipt on a paid response", () => {
+  const nonce = (n: number) => "0x" + (n + 200).toString(16).padStart(64, "0");
+  const key = generatePrivateKey();
+  afterEach(() => {
+    config.stake.receiptSignerKey = "";
+  });
+
+  it("signs the payer, the payment nonce, the request, the exact body bytes and the listed schema", async () => {
+    config.stake.receiptSignerKey = key;
+    const res = await call(makeApp(async () => ({ rate: 1.5 })), nonce(1));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const signed = decodeReceipt(res.headers.get(RECEIPT_HEADER))!;
+    expect(await receiptSignerOf(signed)).toBe(privateKeyToAccount(key).address);
+    expect(signed.receipt).toEqual({
+      payTo: SELLER,
+      payer: "0x" + "99".repeat(20),
+      paymentNonce: nonce(1),
+      requestHash: requestHash("GET", "/fx", ""),
+      outputHash: outputHash(text),
+      schemaHash: schemaHash({ properties: { rate: { type: "number" } }, required: ["rate"], type: "object" }),
+      httpStatus: 200,
+    });
+  });
+
+  it("sends no receipt without a signer key, or when nothing was settled", async () => {
+    expect((await call(makeApp(async () => ({ rate: 1 })), nonce(2))).headers.get(RECEIPT_HEADER)).toBeNull();
+    config.stake.receiptSignerKey = key;
+    const failed = await call(
+      makeApp(async () => {
+        throw new ServiceError("upstream is down", 503);
+      }),
+      nonce(3),
+    );
+    expect(failed.status).toBe(503);
+    expect(failed.headers.get(RECEIPT_HEADER)).toBeNull();
   });
 });
 
