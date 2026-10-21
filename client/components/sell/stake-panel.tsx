@@ -247,7 +247,7 @@ export function StakePanel({ wallet }: { wallet: string }) {
           <ul className="flex flex-col gap-2">
             {recent.map((c) => {
               const st = claimStatus(c, nowMs);
-              const rebuttable = c.state === "proposed" && c.kind === 2 && !c.rebuttal && (c.executeAfter ?? 0) > nowMs;
+              const rebuttable = c.kind === 2 && !c.rebuttal && (c.state === "open" || (c.state === "proposed" && (c.executeAfter ?? 0) > nowMs));
               return (
                 <li key={c.id} className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 font-mono text-[11px]">
                   <div className="flex flex-wrap items-center gap-2">
@@ -324,7 +324,7 @@ function RebutForm({ claim, onDone }: { claim: StakeClaim; onDone: () => Promise
     setBusy(true);
     try {
       await post(`/registry/stake/claims/${claim.id}/rebuttal`, { receipt: receipt.trim(), body });
-      toast.success("Rebuttal accepted", { description: "The verifiers now have up to 1 h to veto the refund." });
+      toast.success("Rebuttal accepted", { description: "The claim is dropped, or the verifiers can veto it before the slash window ends." });
       setOpen(false);
       await onDone();
     } catch (err) {

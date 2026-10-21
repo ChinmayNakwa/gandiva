@@ -70,7 +70,7 @@ interface Row {
 const ACTIVE = "('new', 'open', 'proposed')";
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 30 * 60_000;
-/** A claim with a valid rebuttal waits this long for the verifiers' veto before it may execute anyway. */
+/** A claim with a valid rebuttal waits this long for the verifiers' veto, but never past the slash window (anyone may execute then). */
 const VETO_WAIT_S = 3600;
 
 const getRow = (id: number) => db.prepare("SELECT * FROM claims WHERE id = ?").get(id) as Row | undefined;
@@ -132,6 +132,8 @@ async function step(row: Row, now: number) {
 
   if (row.state === "open") {
     if (on.status !== 0) return adopt(row, id, on, now);
+    // addRebuttal already checked it: a rebutted claim never goes on chain.
+    if (row.rebuttal) return close(row, "vetoed", "the seller's rebuttal was accepted before the claim went on chain", now);
     if (BigInt(nowS) > m.deadline) return close(row, "expired", "fewer than 2 verifier signatures before the claim deadline", now);
     const sigs = JSON.parse(row.sigs) as Record<string, Hex>;
     const me = own();
@@ -242,13 +244,14 @@ export async function addSignature(rowId: number, type: "claim" | "veto", signat
 export async function addRebuttal(rowId: number, r: { receipt: string; body: string }, now = Date.now()) {
   const row = getRow(rowId);
   if (!row) throw new StakeError("no such claim", 404);
-  if (row.state !== "proposed") throw new StakeError(`claim is ${row.state}; only a proposed claim can be rebutted`, 409);
+  if (row.state !== "open" && row.state !== "proposed") throw new StakeError(`claim is ${row.state}; only an open or proposed claim can be rebutted`, 409);
   if (row.kind !== 2) throw new StakeError("this claim rests on the seller's own receipt and cannot be rebutted", 409);
   if (row.rebuttal) throw new StakeError("this claim already has a valid rebuttal", 409);
+  if (row.execute_after && now >= row.execute_after) throw new StakeError("the slash window has closed; anyone may execute this claim now", 409);
   if (Buffer.byteLength(r.body) > MAX_EVIDENCE_BODY) throw new StakeError("body too large");
   const check = await checkRebuttal(getEvidence(row.evidence)!.bundle, r, chainView());
   if (!check.ok) throw new StakeError(check.reason);
-  const vetoDeadline = Math.floor(now / 1000) + VETO_WAIT_S;
+  const vetoDeadline = Math.min(Math.floor(now / 1000) + VETO_WAIT_S, row.execute_after ? Math.floor(row.execute_after / 1000) : Infinity);
   save(row.id, { rebuttal: JSON.stringify(r), veto_deadline: vetoDeadline, next_at: 0 });
   return { vetoDeadline };
 }

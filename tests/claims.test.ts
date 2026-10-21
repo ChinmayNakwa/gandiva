@@ -141,13 +141,32 @@ describe("stake claim worker", () => {
     const { vetoDeadline } = await addRebuttal(id, { receipt: await receiptFor(GOOD, { nonce }), body: GOOD }, T0 + 2000);
     await expect(addRebuttal(id, { receipt: await receiptFor(GOOD, { nonce }), body: GOOD })).rejects.toMatchObject({ status: 409 });
 
-    await run(T0 + 31 * MIN);
-    expect(row(ledgerId)).toMatchObject({ state: "proposed", vetoSignatures: [ADDR[0]] }); // waits for the verifiers, window or not
+    // the veto deadline is capped at the window's end: after it anyone may execute on chain
+    expect(vetoDeadline).toBe(chain.claims.get(claimIdOf(SELLER, BUYER, nonce))!.executeAfter);
+    await run(T0 + 10 * MIN);
+    expect(row(ledgerId)).toMatchObject({ state: "proposed", vetoSignatures: [ADDR[0]] });
     const claimId = claimIdOf(SELLER, BUYER, nonce);
     expect(await addSignature(id, "veto", await signVeto(KEY[2], { id: claimId, deadline: BigInt(vetoDeadline) }, CONTRACT))).toMatchObject({ count: 2 });
-    await run(T0 + 32 * MIN);
+    await run(T0 + 11 * MIN);
     expect(row(ledgerId).state).toBe("vetoed");
     expect(chain.claims.get(claimId)!.status).toBe(3);
+  });
+
+  it("kind 2: a rebuttal before the claim goes on chain drops it without a transaction", async () => {
+    const { ledgerId, nonce } = await opened({ n: 108, receipt: null });
+    expect(row(ledgerId)).toMatchObject({ state: "open", kind: 2 });
+    await addRebuttal(row(ledgerId).id, { receipt: await receiptFor(GOOD, { nonce }), body: GOOD }, T0 + 1000);
+    await sign(ledgerId, 1);
+    await run(T0 + 2000);
+    expect(row(ledgerId).state).toBe("vetoed");
+    expect(chain.claims.get(claimIdOf(SELLER, BUYER, nonce))).toBeUndefined();
+  });
+
+  it("kind 2: a rebuttal after the slash window is refused", async () => {
+    const { ledgerId, nonce } = await opened({ n: 109, receipt: null });
+    await sign(ledgerId, 1);
+    await run(T0 + 1000);
+    await expect(addRebuttal(row(ledgerId).id, { receipt: await receiptFor(GOOD, { nonce }), body: GOOD }, T0 + 31 * MIN)).rejects.toMatchObject({ status: 409 });
   });
 
   it("adopts a claim the chain already has instead of proposing it again", async () => {
