@@ -9,7 +9,7 @@ export interface CapReservation {
 
 /**
  * Spend cap shared by every run and every direct call of one wallet, independent of per-run budgets.
- * Counts what the ledger says was spent (or may have been, for unconfirmed rows) in the rolling window plus
+ * Counts what the ledger says was spent (or may still be, for unconfirmed rows and failed calls with a live signature) in the rolling window plus
  * payments in flight, so a flood of runs cannot drain the wallet.
  * With `buyer` it counts only that wallet's ledger rows (each signed-in user's agent wallet has its own cap);
  * without it every row counts.

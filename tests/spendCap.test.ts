@@ -31,6 +31,27 @@ describe("wallet-level spend cap", () => {
     expect(cap.status().remaining).toBe("4000");
   });
 
+  it("a seller that errors after signing cannot cash the signatures past the cap", async () => {
+    const fetchMock = vi.fn(async (_u: unknown, init: any) => (init?.headers?.["PAYMENT-SIGNATURE"] ? new Response(JSON.stringify({ error: "boom" }), { status: 500 }) : challenge402()));
+    vi.stubGlobal("fetch", fetchMock);
+    const payer = new SafePayer(generatePrivateKey(), new SpendCap(5_000n, HOUR));
+    const results = [];
+    for (let i = 0; i < 8; i++) results.push(await payer.call(service(), {}, { budget: new BudgetLedger(100_000n) }));
+    // 0.005 cap at 0.001 per call: 5 live signatures, then nothing more is signed
+    expect(results.filter((r) => r.status === "failed_not_charged")).toHaveLength(5);
+    expect(results.filter((r) => r.reason?.startsWith("spend cap:"))).toHaveLength(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5 * 2 + 3);
+  });
+
+  it("an expired failed signature no longer counts", () => {
+    const cap = new SpendCap(10_000n, HOUR);
+    const auth = (validBefore: number) => ({ from: "0xb", nonce: "0x" + "01".repeat(32), validBefore, signedAt: validBefore - 60 });
+    const now = Math.floor(Date.now() / 1000);
+    addLedger({ buyer: "0xb", seller: "0xs", serviceName: "svc", endpoint: "http://x", listed: "1000", asked: "3000", paid: "0", status: "failed_not_charged", latencyMs: 1, auth: auth(now + 60) });
+    addLedger({ buyer: "0xb", seller: "0xs", serviceName: "svc", endpoint: "http://x", listed: "1000", asked: "4000", paid: "0", status: "failed_not_charged", latencyMs: 1, auth: auth(now - 1) });
+    expect(cap.used()).toBe(3000n);
+  });
+
   it("50 parallel reservations cannot push past the limit", async () => {
     const cap = new SpendCap(10_000n, HOUR);
     const holds = (await Promise.all(Array.from({ length: 50 }, () => cap.reserve(1_000n)))).filter(Boolean);

@@ -369,11 +369,15 @@ export function listAuditable(nowSeconds: number, graceSeconds = 90) {
 }
 
 /** Money spent or possibly spent since `sinceIso` (all buyers, or just one wallet): charged rows plus unconfirmed ones at the amount they asked. */
-export function spentSince(sinceIso: string, buyer?: string): bigint {
+export function spentSince(sinceIso: string, buyer?: string, nowS = Math.floor(Date.now() / 1000)): bigint {
+  // A failed call still counts while its signed authorization is live: the seller holds it and can settle it until it expires.
   const rows = db
-    .prepare("SELECT status, paid, asked FROM ledger WHERE ts >= ? AND status IN ('paid','paid_output_rejected','unconfirmed')" + (buyer ? " AND lower(buyer) = ?" : ""))
-    .all(...(buyer ? [sinceIso, buyer.toLowerCase()] : [sinceIso])) as { status: LedgerStatus; paid: string; asked: string | null }[];
-  return rows.reduce((sum, r) => sum + BigInt(r.status === "unconfirmed" ? (r.asked ?? "0") : r.paid), 0n);
+    .prepare(
+      "SELECT status, paid, asked FROM ledger WHERE ts >= ? AND (status IN ('paid','paid_output_rejected','unconfirmed') OR (status = 'failed_not_charged' AND auth_nonce IS NOT NULL AND valid_before > ?))" +
+        (buyer ? " AND lower(buyer) = ?" : ""),
+    )
+    .all(...(buyer ? [sinceIso, nowS, buyer.toLowerCase()] : [sinceIso, nowS])) as { status: LedgerStatus; paid: string; asked: string | null }[];
+  return rows.reduce((sum, r) => sum + BigInt(r.status === "paid" || r.status === "paid_output_rejected" ? r.paid : (r.asked ?? "0")), 0n);
 }
 
 export function listLedger(q: { runId?: string; buyer?: string; limit?: number } = {}) {
