@@ -16,7 +16,8 @@ const tooLarge = (c: any) => c.json({ error: `request too large (max ${MAX_BODY}
 function failure(c: any, err: unknown) {
   if (err instanceof ZodError) return c.json({ error: err.issues.map((i) => `${i.path.join(".") || "form"}: ${i.message}`).join("; "), issues: err.issues }, 400);
   if (err instanceof HostedError || err instanceof RegistryError) return c.json({ error: err.message }, err.status);
-  return c.json({ error: "body must be valid JSON" }, 400);
+  if (err instanceof SyntaxError) return c.json({ error: "body must be valid JSON" }, 400);
+  throw err; // anything else is a real failure: app.onError logs it and answers 500
 }
 
 hostedRoutes.post("/", bodyLimit({ maxSize: MAX_BODY, onError: tooLarge }), async (c) => {

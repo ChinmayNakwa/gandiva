@@ -97,3 +97,28 @@ describe("registry: deleting needs the admin token", () => {
     expect(getService("ref-fx")).toBeDefined();
   });
 });
+
+describe("registry: errors are reported for what they are", () => {
+  const post = (body: string) => registry.request("/services", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+
+  it("a bad maxPrice is a 400, not a crash", async () => {
+    expect((await registry.request("/services?maxPrice=abc")).status).toBe(400);
+    expect((await registry.request("/services?maxPrice=0.01")).status).toBe(400);
+    expect((await registry.request("/services?maxPrice=5000")).status).toBe(200);
+  });
+
+  it("only broken JSON is called broken JSON; a database failure is a 500", async () => {
+    const bad = await post("{not json");
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as any).error).toMatch(/valid JSON/);
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.exec("CREATE TEMP TRIGGER services_write_fails BEFORE INSERT ON services BEGIN SELECT RAISE(ABORT, 'database is locked'); END;");
+    try {
+      const listing = { id: "db-down", name: "db-down", category: "data", endpoint: "https://x.test/a", price: "1000", payTo: SELLER, inputSchema: {}, outputSchema: {} };
+      expect((await post(JSON.stringify(listing))).status).toBe(500);
+    } finally {
+      db.exec("DROP TRIGGER services_write_fails");
+    }
+  });
+});

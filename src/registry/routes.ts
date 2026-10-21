@@ -27,6 +27,7 @@ const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeE
 
 registry.get("/services", (c) => {
   const { category, maxPrice, sort } = c.req.query();
+  if (maxPrice && !/^\d+$/.test(maxPrice)) return c.json({ error: "maxPrice is in USDC smallest units (6 decimals), e.g. 5000 = 0.005 USDC" }, 400);
   return c.json({
     services: searchServices({ category, maxPrice, sort }).map((s) => {
       const cred = credibilityCached(s.id);
@@ -143,7 +144,8 @@ registry.post(
     } catch (err) {
       if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
       if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);
-      return c.json({ error: "body must be valid JSON" }, 400);
+      if (err instanceof SyntaxError) return c.json({ error: "body must be valid JSON" }, 400);
+      throw err; // anything else is a real failure: app.onError logs it and answers 500
     }
   },
 );
@@ -181,7 +183,8 @@ registry.post(
     } catch (err) {
       if (err instanceof ZodError) return c.json({ error: "invalid listing", issues: err.issues }, 400);
       if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);
-      return c.json({ error: "body must be valid JSON" }, 400);
+      if (err instanceof SyntaxError) return c.json({ error: "body must be valid JSON" }, 400);
+      throw err; // anything else is a real failure: app.onError logs it and answers 500
     }
   },
 );
