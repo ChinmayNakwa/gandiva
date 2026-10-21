@@ -59,6 +59,12 @@ function hasProof(s: Service): boolean {
   return row?.pay_to === s.payTo.toLowerCase();
 }
 
+/**
+ * Did the payTo's owner write this listing? Only then may its output schema bind that payTo's stake: anyone can list
+ * someone else's payTo with a stricter schema (or a proxy endpoint) and turn honest answers into slashable claims.
+ */
+export const payToProven = (s: Service) => s.owner.startsWith("wallet:") || hasProof(s);
+
 /** The built-in sellers' keys are in .env, so the marketplace signs their proofs itself at boot. */
 export async function proveBuiltIns() {
   const keys = Object.entries(process.env).filter(([k, v]) => /^(SELLER_KEY_|TRAVEL_BRIEF_KEY$)/.test(k) && /^0x[0-9a-fA-F]{64}$/.test(v ?? ""));

@@ -28,7 +28,9 @@ function seller(body: string, status = 200, headers: Record<string, string> = {}
     vi.fn(async () => (n++ === 0 ? challenge402() : new Response(body, { status, headers: { "Content-Type": "application/json", "PAYMENT-RESPONSE": settled, ...headers } }))),
   );
 }
-const run = () => payer.call(service(), { from: "USD" }, { budget: new BudgetLedger(10_000n) });
+// A listing its payTo's own wallet wrote, so its schema may bind that payTo's stake.
+const owned = service({ owner: `wallet:${SELLER.toLowerCase()}` });
+const run = (s = owned) => payer.call(s, { from: "USD" }, { budget: new BudgetLedger(10_000n) });
 
 describe("evidence for paid-and-rejected calls", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -89,5 +91,14 @@ describe("evidence for paid-and-rejected calls", () => {
     expect(evidenceForLedger(injected.ledgerId)).toBeUndefined();
     expect(fileClaim).not.toHaveBeenCalledWith(expect.objectContaining({ ledgerId: ok.ledgerId }));
     expect(fileClaim).not.toHaveBeenCalledWith(expect.objectContaining({ ledgerId: injected.ledgerId }));
+  });
+
+  it("a listing that names someone else's payTo files no claim against it", async () => {
+    // e.g. an outsider re-lists an honest seller's endpoint and payTo with a stricter output schema
+    seller('{"rate":"high"}');
+    const r = await run(service({ id: "copycat", outputSchema: { type: "object", required: ["rate"], properties: { rate: { type: "number" } } } }));
+    expect(r.status).toBe("paid_output_rejected");
+    expect(evidenceForLedger(r.ledgerId)).toBeUndefined();
+    expect(fileClaim).not.toHaveBeenCalledWith(expect.objectContaining({ ledgerId: r.ledgerId }));
   });
 });

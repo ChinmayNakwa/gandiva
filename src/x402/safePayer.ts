@@ -5,6 +5,7 @@ import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { fromUnits, NETWORK } from "../config.js";
+import { payToProven } from "../registry/credibility.js";
 import { addLedger, type LedgerEntry, type LedgerStatus, type Service } from "../registry/store.js";
 import { fileClaim } from "../stake/claims.js";
 import { saveEvidence } from "../stake/evidence.js";
@@ -147,8 +148,8 @@ export class SafePayer {
       try {
         const row = addLedger({ ...base, asked: r.asked?.toString() ?? null, paid: r.paid.toString(), txHash: r.txHash ?? null, status: r.status, reason: r.reason ?? null, latencyMs, auth });
         // Paid and rejected: keep the evidence and file a stake claim (the verifiers decide whether it holds). A phrase
-        // match is not proof, so prompt-injection rejects get neither.
-        if (r.status === "paid_output_rejected" && paidResponse && !r.reason?.startsWith("prompt injection")) {
+        // match is not proof, so prompt-injection rejects get neither; nor do listings whose payTo never proved it wrote them.
+        if (r.status === "paid_output_rejected" && paidResponse && !r.reason?.startsWith("prompt injection") && payToProven(service)) {
           try {
             const target = new URL(url);
             const evidence = saveEvidence({
