@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { computeReputation } from "../src/registry/store.js";
+import { db } from "../src/db.js";
+import { addLedger, computeReputation, reputationFor, upsertService } from "../src/registry/store.js";
+import { service } from "./helpers.js";
 
 const HOUR = 3_600_000;
 const NOW = Date.parse("2026-10-17T12:00:00Z");
@@ -56,5 +58,19 @@ describe("reputation: time-weighted score", () => {
 
   it("a half-life of 0 turns time weighting off", () => {
     expect(rep([row("paid_output_rejected", 500)], 0).score).toBeCloseTo(0.5, 5);
+  });
+});
+
+describe("reputation: self-paid calls do not count", () => {
+  it("calls the owner paid from its own wallet or its agent wallet are left out", () => {
+    const owner = "0x" + "a1".repeat(20);
+    const agent = "0x" + "b2".repeat(20);
+    db.prepare("INSERT OR REPLACE INTO users (address, agent_address) VALUES (?, ?)").run(owner, agent);
+    upsertService(service({ id: "self-farm", name: "self-farm", payTo: agent, owner: `wallet:${owner}` }));
+    const call = (buyer: string) => addLedger({ buyer, seller: agent, serviceId: "self-farm", serviceName: "self-farm", endpoint: "https://x.test/a", listed: "1", asked: "1", paid: "1", status: "paid", latencyMs: 5 });
+    for (let i = 0; i < 5; i++) (call(agent.toUpperCase().replace("0X", "0x")), call(owner));
+    expect(reputationFor("self-farm").attempts).toBe(0);
+    call("0x" + "c3".repeat(20));
+    expect(reputationFor("self-farm").attempts).toBe(1);
   });
 });

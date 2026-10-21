@@ -235,10 +235,19 @@ export function computeReputation(
 }
 
 /** Reputation comes from the buyer-side ledger: every attempted call counts, only clean "paid" counts as success. */
+// Calls the listing's owner paid itself (from its wallet or its agent wallet) do not count: the money comes straight back,
+// so they would buy reputation for free.
+const SELF_PAID = `lower(buyer) NOT IN (
+  SELECT substr(owner, 8) FROM services WHERE id = @id AND owner LIKE 'wallet:%'
+  UNION SELECT lower(u.agent_address) FROM services s JOIN users u ON s.owner = 'wallet:' || u.address WHERE s.id = @id AND u.agent_address IS NOT NULL
+)`;
+
 export function reputationFor(serviceId: string): Reputation {
   const rows = db
-    .prepare("SELECT status, latency_ms, ts FROM ledger WHERE service_id = ? AND status != 'unconfirmed' AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'spend cap:%' AND reason NOT LIKE 'payment rejected:%'))")
-    .all(serviceId) as { status: LedgerStatus; latency_ms: number; ts: string }[];
+    .prepare(
+      `SELECT status, latency_ms, ts FROM ledger WHERE service_id = @id AND status != 'unconfirmed' AND (reason IS NULL OR (reason NOT LIKE 'budget:%' AND reason NOT LIKE 'spend cap:%' AND reason NOT LIKE 'payment rejected:%')) AND ${SELF_PAID}`,
+    )
+    .all({ id: serviceId }) as { status: LedgerStatus; latency_ms: number; ts: string }[];
   return computeReputation(rows);
 }
 
