@@ -21,6 +21,16 @@ export function getPayer(): SafePayer {
   return payer;
 }
 
+export const MAX_RUNS = 500;
+/** Keeps a run for /buyer/runs. Past MAX_RUNS the oldest finished ones go: each holds its whole log and results, and dry runs are free to start. */
+export function rememberRun(run: RunState) {
+  runs.set(run.id, run);
+  for (const [id, r] of runs) {
+    if (runs.size <= MAX_RUNS) break;
+    if (r.state !== "running") runs.delete(id); // a Map iterates oldest first
+  }
+}
+
 export const getRun = (id: string) => runs.get(id);
 
 /** Does this user have a paying run in progress? (A withdrawal must wait for it.) */
@@ -98,7 +108,7 @@ export function startTask(opts: StartOptions): RunState {
     purchases: [],
     startedAt: new Date().toISOString(),
   };
-  runs.set(run.id, run);
+  rememberRun(run);
   db.prepare("INSERT INTO runs (id, ts, task, budget) VALUES (?,?,?,?)").run(run.id, run.startedAt, run.task, run.budget);
   executeTask(run, mode, payer, opts.llm).catch((err) => {
     run.state = "failed";
@@ -280,7 +290,7 @@ export async function buyCategory(opts: { category: Category; input: Record<stri
     purchases: [],
     startedAt: new Date().toISOString(),
   };
-  runs.set(run.id, run);
+  rememberRun(run);
   const budget = new BudgetLedger(BigInt(run.budget));
   // Only sellers whose listed input fits the request can do this job (a category now holds different kinds of work).
   const fits = searchServices({ category: opts.category }).filter((s) => validateInput(s.inputSchema, structuredClone(opts.input)).ok);

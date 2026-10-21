@@ -40,3 +40,15 @@ describe("beyondBooks (what the AI-off fallback must refuse)", () => {
     expect(beyondBooks("From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarise each description in Hindi.")).toBeUndefined();
   });
 });
+
+describe("stored runs stay bounded", () => {
+  it("past MAX_RUNS the oldest finished runs go, running ones stay", async () => {
+    const { rememberRun, getRun, MAX_RUNS } = await import("../src/buyer/scout.js");
+    const run = (id: string, state: "running" | "done") => ({ id, state, task: "", budget: "0", maxConcurrency: 1, mode: "agent", dryRun: true, log: [], purchases: [], startedAt: "" }) as any;
+    rememberRun(run("keep-running", "running"));
+    for (let i = 0; i < MAX_RUNS + 10; i++) rememberRun(run(`r${i}`, "done"));
+    expect(getRun("keep-running")).toBeDefined();
+    expect(getRun("r0")).toBeUndefined();
+    expect(getRun(`r${MAX_RUNS + 9}`)).toBeDefined();
+  });
+});

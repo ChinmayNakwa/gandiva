@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registerExternal } from "../src/registry/store.js";
-import { riskyPattern, validate, validateInput } from "../src/x402/schema.js";
+import { compiledCount, MAX_COMPILED, riskyPattern, validate, validateInput } from "../src/x402/schema.js";
 
 const schema = { type: "object", required: ["rate", "from"], properties: { rate: { type: "number" }, from: { type: "string" } }, additionalProperties: false };
 
@@ -29,6 +29,15 @@ describe("input validation", () => {
   });
   it("rejects values outside the schema", () => {
     expect(validateInput(pageSchema, { page: "0" }).ok).toBe(false);
+  });
+});
+
+describe("compiled schema cache", () => {
+  it("stays bounded when every request brings a new schema, and still validates after starting over", () => {
+    for (let i = 0; i < MAX_COMPILED + 5; i++) validate({ type: "object", properties: { [`f${i}`]: { type: "number" } } }, {});
+    expect(compiledCount()).toBeLessThanOrEqual(MAX_COMPILED);
+    expect(validate(schema, { rate: 1, from: "GBP" }).ok).toBe(true);
+    expect(validate(schema, { rate: "x", from: "GBP" })).toMatchObject({ ok: false, error: expect.stringMatching(/must be number/) });
   });
 });
 

@@ -1,15 +1,19 @@
 import { Ajv, type ValidateFunction } from "ajv";
 import addFormatsModule from "ajv-formats";
 
-const ajv = new Ajv({ allErrors: true, strict: false });
 const addFormats = (addFormatsModule as any).default ?? addFormatsModule;
-addFormats(ajv);
-
 // Query-string inputs arrive as strings, so input validation coerces types ("2" -> 2) in place.
-const coercingAjv = new Ajv({ allErrors: true, strict: false, coerceTypes: true, useDefaults: true });
-addFormats(coercingAjv);
+const makeAjv = (coerce: boolean) => {
+  const a = new Ajv({ allErrors: true, strict: false, ...(coerce ? { coerceTypes: true, useDefaults: true } : {}) });
+  addFormats(a);
+  return a;
+};
+let ajv = makeAjv(false);
+let coercingAjv = makeAjv(true);
 
 const cache = new Map<string, ValidateFunction>();
+export const MAX_COMPILED = 1000;
+export const compiledCount = () => cache.size;
 
 /**
  * True for a regex with a group that repeats without bound while its body repeats or branches, like (a+)+ or (a|aa)*.
@@ -45,17 +49,23 @@ export function hasRiskyPattern(schema: unknown): boolean {
 }
 export const RISKY_PATTERN = "schema has a regex pattern with nested repetition (like (a+)+), which can hang the server; simplify it";
 
-function check(instance: Ajv, tag: string, schema: Record<string, unknown>, data: unknown): { ok: true } | { ok: false; error: string } {
-  const key = tag + JSON.stringify(schema);
+function check(coerce: boolean, schema: Record<string, unknown>, data: unknown): { ok: true } | { ok: false; error: string } {
+  const key = (coerce ? "coerce:" : "strict:") + JSON.stringify(schema);
   let fn = cache.get(key);
   if (!fn) {
     if (hasRiskyPattern(schema)) return { ok: false, error: RISKY_PATTERN };
-    fn = instance.compile(schema);
+    // Anyone can re-post a listing with a new schema, and Ajv keeps every schema it compiled too: start both over when full.
+    if (cache.size >= MAX_COMPILED) {
+      cache.clear();
+      ajv = makeAjv(false);
+      coercingAjv = makeAjv(true);
+    }
+    fn = (coerce ? coercingAjv : ajv).compile(schema);
     cache.set(key, fn);
   }
   if (fn(data)) return { ok: true };
-  return { ok: false, error: instance.errorsText(fn.errors, { separator: "; " }) };
+  return { ok: false, error: ajv.errorsText(fn.errors, { separator: "; " }) };
 }
 
-export const validate = (schema: Record<string, unknown>, data: unknown) => check(ajv, "strict:", schema, data);
-export const validateInput = (schema: Record<string, unknown>, data: unknown) => check(coercingAjv, "coerce:", schema, data);
+export const validate = (schema: Record<string, unknown>, data: unknown) => check(false, schema, data);
+export const validateInput = (schema: Record<string, unknown>, data: unknown) => check(true, schema, data);
