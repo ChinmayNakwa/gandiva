@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "../db.js";
 import { config, MAX_PRICE_UNITS, NETWORK, USDC_ADDRESS } from "../config.js";
+import { findInjection } from "../x402/injection.js";
 import { hasRiskyPattern, RISKY_PATTERN } from "../x402/schema.js";
 
 export const CATEGORIES = ["data", "inference", "scraping"] as const;
@@ -28,7 +29,9 @@ export const serviceInput = z.object({
   outputSchema: z.record(z.string(), z.unknown()).refine((s) => !hasRiskyPattern(s), RISKY_PATTERN),
   description: z.string().max(500).default(""),
   owner: z.string().max(80).default("external"),
-});
+})
+  // Listing text goes into the buyer agent's prompt, so it must not carry orders for the AI.
+  .refine((s) => !findInjection([s.name, s.description, s.inputSchema, s.outputSchema]), "listing text reads like orders for an AI agent (prompt injection); describe the service plainly");
 export type ServiceInput = z.infer<typeof serviceInput>;
 
 /** Result of asking the listed endpoint for its 402: "verified" = terms match the listing, "mismatch" = they do not, "unchecked" = could not tell. */
