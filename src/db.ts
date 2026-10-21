@@ -213,3 +213,11 @@ if (/CHECK\s*\(status IN/i.test(ledgerSql)) {
     COMMIT;
   `);
 }
+
+// Reputation reads every row of a listing on each marketplace request, the spend cap every row of a wallet on each payment,
+// and chains count a payer's failed settlements. Created after the ledger rebuild above so they land on the final table.
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_ledger_service ON ledger (service_id, id);
+CREATE INDEX IF NOT EXISTS idx_ledger_buyer_ts ON ledger (lower(buyer), ts);
+CREATE INDEX IF NOT EXISTS idx_sales_seller_payer ON sales (seller, lower(payer));
+`);

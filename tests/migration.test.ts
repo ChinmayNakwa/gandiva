@@ -36,6 +36,11 @@ describe("db migration from the pre-'unconfirmed' ledger schema", () => {
       expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'ledger_old'").all()).toHaveLength(0);
       // AUTOINCREMENT continues after the migrated ids
       expect((db.prepare("SELECT MAX(id) AS m FROM ledger").get() as any).m).toBe(3);
+      // the rebuilt table gets the lookup indexes, and the hot queries use them
+      const plan = (sql: string, ...args: unknown[]) => JSON.stringify(db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args));
+      expect(plan("SELECT status FROM ledger WHERE service_id = ? AND status != 'unconfirmed'", "svc")).toMatch(/idx_ledger_service/);
+      expect(plan("SELECT paid FROM ledger WHERE ts >= ? AND status = 'paid' AND lower(buyer) = ?", "t", "0xb")).toMatch(/idx_ledger_buyer_ts/);
+      expect(plan("SELECT id FROM sales WHERE seller = ? AND lower(payer) = ? AND status = 'settle_failed' AND ts > ?", "s", "p", "t")).toMatch(/idx_sales_seller_payer/);
     } finally {
       db.close();
       process.env.DB_PATH = ":memory:";
