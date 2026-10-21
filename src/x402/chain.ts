@@ -9,8 +9,8 @@ const usdcAbi = parseAbi([
 const authorizationUsed = parseAbiItem("event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)");
 
 // sepolia.base.org rejects eth_getLogs ranges above ~200 blocks, so scan in smaller chunks.
-const LOG_CHUNK = 150n;
-const PARALLEL_CHUNKS = 8;
+export const LOG_CHUNK = 150n;
+export const PARALLEL_CHUNKS = 8;
 const BASE_BLOCK_SECONDS = 2;
 
 let client: PublicClient | null = null;

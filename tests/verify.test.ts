@@ -73,17 +73,29 @@ describe("checkRebuttal", () => {
 describe("rpcChainView.receiptSignerAt", () => {
   const OLD = "0x00000000000000000000000000000000000000aa" as Hex;
   const NEW = "0x00000000000000000000000000000000000000bb" as Hex;
-  const pub = (changes: unknown[], seen: { fromBlock?: bigint }) =>
+  /** `changeAt`: the block of the one ReceiptSignerSet event, if any. Records every range asked for. */
+  const pub = (head: bigint, changeAt: bigint | null, ranges: [bigint, bigint][] = []) =>
     ({
-      getBlockNumber: async () => 500n,
+      getBlockNumber: async () => head,
       readContract: async () => NEW,
-      getLogs: async (q: { fromBlock: bigint }) => ((seen.fromBlock = q.fromBlock), changes),
+      getLogs: async (q: { fromBlock: bigint; toBlock: bigint }) => {
+        ranges.push([q.fromBlock, q.toBlock]);
+        return changeAt !== null && changeAt >= q.fromBlock && changeAt <= q.toBlock ? [{ args: { previous: OLD } }] : [];
+      },
     }) as any;
 
   it("rebuilds the signer at a past block from the events since, without an archive node", async () => {
-    const seen: { fromBlock?: bigint } = {};
-    expect(await rpcChainView(pub([{ args: { previous: OLD } }], seen), SELLER).receiptSignerAt(SELLER, 100n)).toBe(OLD);
-    expect(seen.fromBlock).toBe(101n);
-    expect(await rpcChainView(pub([], {}), SELLER).receiptSignerAt(SELLER, 100n)).toBe(NEW);
+    expect(await rpcChainView(pub(500n, 300n), SELLER).receiptSignerAt(SELLER, 100n)).toBe(OLD);
+    expect(await rpcChainView(pub(500n, null), SELLER).receiptSignerAt(SELLER, 100n)).toBe(NEW);
+  });
+
+  it("asks the RPC for at most 150 blocks at a time, covering every block since the payment", async () => {
+    const ranges: [bigint, bigint][] = [];
+    await rpcChainView(pub(3_000n, null, ranges), SELLER).receiptSignerAt(SELLER, 100n);
+    expect(ranges.every(([f, t]) => t - f + 1n <= 150n)).toBe(true);
+    ranges.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    expect(ranges[0][0]).toBe(101n);
+    expect(ranges.at(-1)![1]).toBe(3_000n);
+    ranges.slice(1).forEach(([f], i) => expect(f).toBe(ranges[i][1] + 1n));
   });
 });

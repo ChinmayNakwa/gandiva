@@ -3,6 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { canonical } from "../buyer/catalogue.js";
 import { USDC_ADDRESS } from "../config.js";
+import { LOG_CHUNK, PARALLEL_CHUNKS } from "../x402/chain.js";
 import { validate } from "../x402/schema.js";
 import type { EvidenceBundle } from "./evidence.js";
 import { decodeReceipt, outputHash, receiptSignerOf, requestHash, schemaHash, type SignedReceipt } from "./receipt.js";
@@ -47,14 +48,20 @@ export function rpcChainView(pub: PublicClient, stake: Hex): ChainView {
       const block = await pub.getBlock({ blockNumber: receipt.blockNumber });
       return { blockNumber: receipt.blockNumber, timestamp: block.timestamp, logs: receipt.logs };
     },
-    // Public RPCs keep only recent state, so read today's signer and walk back through the events since `block`.
+    // Public RPCs keep only recent state, so read today's signer and walk forward through the events since `block`, in
+    // RPC-sized chunks: the first change after `block` names the signer that was live at it.
     async receiptSignerAt(seller, block) {
       const head = await pub.getBlockNumber();
-      const [current, changes] = await Promise.all([
-        pub.readContract({ address: stake, abi: STAKE_ABI, functionName: "receiptSigner", args: [seller], blockNumber: head }),
-        pub.getLogs({ address: stake, event: STAKE_ABI[1], args: { seller }, fromBlock: block + 1n, toBlock: head }),
-      ]);
-      return (changes.length ? changes[0].args.previous! : current) as Hex;
+      const current = await pub.readContract({ address: stake, abi: STAKE_ABI, functionName: "receiptSigner", args: [seller], blockNumber: head });
+      for (let from = block + 1n; from <= head; from += LOG_CHUNK * BigInt(PARALLEL_CHUNKS)) {
+        const starts = Array.from({ length: PARALLEL_CHUNKS }, (_, i) => from + BigInt(i) * LOG_CHUNK).filter((f) => f <= head);
+        const batch = await Promise.all(
+          starts.map((f) => pub.getLogs({ address: stake, event: STAKE_ABI[1], args: { seller }, fromBlock: f, toBlock: f + LOG_CHUNK - 1n < head ? f + LOG_CHUNK - 1n : head })),
+        );
+        const first = batch.flat()[0];
+        if (first) return first.args.previous as Hex;
+      }
+      return current as Hex;
     },
   };
 }
