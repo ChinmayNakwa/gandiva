@@ -493,6 +493,17 @@ describe("agent chain: Sell tab and paid route", () => {
     expect(getService("tokyo-brief")).toBeUndefined();
   });
 
+  it("a failed save leaves no half-made listing behind, so saving again works", async () => {
+    db.exec("CREATE TEMP TRIGGER chain_write_fails BEFORE INSERT ON chain_sellers BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END;");
+    try {
+      expect((await send("POST", "/mine/chains", aliceCookie, form())).status).not.toBe(201);
+      expect(getService("tokyo-brief")).toBeUndefined();
+    } finally {
+      db.exec("DROP TRIGGER chain_write_fails");
+    }
+    expect((await send("POST", "/mine/chains", aliceCookie, form())).status).toBe(201);
+  });
+
   it("another wallet cannot take or delete it; the owner's delete removes the steps; the endpoint form cannot overwrite it", async () => {
     await send("POST", "/mine/chains", aliceCookie, form());
     expect((await send("POST", "/mine/chains", bobCookie, form())).status).toBe(409);

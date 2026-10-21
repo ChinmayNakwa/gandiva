@@ -178,13 +178,13 @@ export function deleteOwnedService(id: string, wallet: string): "deleted" | "not
   return deleteService(id) ? "deleted" : "not_found";
 }
 
-export function deleteService(id: string) {
+export const deleteService = db.transaction((id: string) => {
   db.prepare("DELETE FROM hosted_sellers WHERE service_id = ?").run(id);
   db.prepare("DELETE FROM mcp_sellers WHERE service_id = ?").run(id);
   db.prepare("DELETE FROM chain_sellers WHERE service_id = ?").run(id);
   db.prepare("DELETE FROM chain_runs WHERE service_id = ?").run(id);
   return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
-}
+});
 
 export function listServices(): Service[] {
   return db.prepare("SELECT * FROM services").all().map(rowToService);

@@ -6,6 +6,7 @@ import { canonical } from "../buyer/catalogue.js";
 import { buyFrom, Ctx, type PayFn, type RunState } from "../buyer/purchase.js";
 import { resolveRef } from "../buyer/refs.js";
 import { config, fromUnits, MAX_PRICE_UNITS } from "../config.js";
+import { db } from "../db.js";
 import { secretsConfigured } from "../crypto/secrets.js";
 import { getHosted } from "../hosted/agents.js";
 import { getService, registerForWallet, searchServices, slug, walletOwner, type Category, type Service, type ServiceWithReputation } from "../registry/store.js";
@@ -547,23 +548,26 @@ export async function saveChain(raw: unknown, wallet: string): Promise<Service> 
   const existing = getService(id);
   if (existing?.owner === walletOwner(wallet) && !isChainService(id)) throw new ChainError(`"${id}" is already one of your other listings; choose another name`, 409);
   const plan = planChain(f, id);
-  const service = registerForWallet(
-    {
-      id,
-      name: f.name,
-      category: plan.category,
-      endpoint: `${config.publicBaseUrl}/sellers/c/${id}/run`,
-      method: "POST",
-      price: f.price,
-      description: f.description,
-      inputSchema: plan.inputSchema,
-      outputSchema: plan.outputSchema,
-    },
-    wallet,
-    { payTo: agentWalletOf(wallet) },
-  );
-  upsertChain({ serviceId: service.id, owner: wallet, steps: plan.steps, subBudget: BigInt(f.subBudget) });
-  return service;
+  // One transaction: a listing saved without its chain row could never be saved again (it would look like another listing).
+  return db.transaction(() => {
+    const service = registerForWallet(
+      {
+        id,
+        name: f.name,
+        category: plan.category,
+        endpoint: `${config.publicBaseUrl}/sellers/c/${id}/run`,
+        method: "POST",
+        price: f.price,
+        description: f.description,
+        inputSchema: plan.inputSchema,
+        outputSchema: plan.outputSchema,
+      },
+      wallet,
+      { payTo: agentWalletOf(wallet) },
+    );
+    upsertChain({ serviceId: service.id, owner: wallet, steps: plan.steps, subBudget: BigInt(f.subBudget) });
+    return service;
+  })();
 }
 
 /** Free: what the chain would cost and earn per call, and the listing it becomes. Nothing is saved or paid. */

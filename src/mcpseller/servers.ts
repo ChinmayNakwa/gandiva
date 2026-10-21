@@ -197,24 +197,28 @@ export async function saveServer(raw: unknown, wallet: string, now = Date.now())
     try {
       const host = new URL(url).hostname;
       const about = (tool.description ?? tool.title ?? tool.name).replace(/\s+/g, " ").trim();
-      const service = registerForWallet(
-        {
-          id,
-          name: `${name}: ${tool.title ?? tool.name}`.slice(0, 80),
-          category: f.category,
-          endpoint: `${config.publicBaseUrl}/sellers/u/${id}/call`,
-          method: "POST",
-          price: f.price,
-          description: `${about.slice(0, MAX_LISTING_DESCRIPTION)} (MCP tool from ${host})`.slice(0, 500),
-          inputSchema: schema,
-          outputSchema: mcpOutputSchema,
-        },
-        wallet,
-      );
-      db.prepare(
-        `INSERT INTO mcp_sellers (service_id, owner, server_id, url, token_enc, tool_name) VALUES (?,?,?,?,?,?)
-         ON CONFLICT(service_id) DO UPDATE SET server_id=excluded.server_id, url=excluded.url, token_enc=excluded.token_enc, tool_name=excluded.tool_name`,
-      ).run(service.id, wallet.toLowerCase(), serverId, url, tokenEnc, tool.name);
+      // One transaction, so a listing never exists without the row that says which tool it calls.
+      const service = db.transaction(() => {
+        const s = registerForWallet(
+          {
+            id,
+            name: `${name}: ${tool.title ?? tool.name}`.slice(0, 80),
+            category: f.category,
+            endpoint: `${config.publicBaseUrl}/sellers/u/${id}/call`,
+            method: "POST",
+            price: f.price,
+            description: `${about.slice(0, MAX_LISTING_DESCRIPTION)} (MCP tool from ${host})`.slice(0, 500),
+            inputSchema: schema,
+            outputSchema: mcpOutputSchema,
+          },
+          wallet,
+        );
+        db.prepare(
+          `INSERT INTO mcp_sellers (service_id, owner, server_id, url, token_enc, tool_name) VALUES (?,?,?,?,?,?)
+           ON CONFLICT(service_id) DO UPDATE SET server_id=excluded.server_id, url=excluded.url, token_enc=excluded.token_enc, tool_name=excluded.tool_name`,
+        ).run(s.id, wallet.toLowerCase(), serverId, url, tokenEnc, tool.name);
+        return s;
+      })();
       listed.push(service);
     } catch (err) {
       if (!(err instanceof RegistryError)) throw err;
