@@ -7,6 +7,7 @@ import { config, NETWORK, USDC_ADDRESS, USDC_EIP712 } from "../config.js";
 import { db } from "../db.js";
 import { addSale } from "../registry/store.js";
 import { outputHash, RECEIPT_HEADER, requestHash, schemaHash, signReceipt } from "../stake/receipt.js";
+import { lookupAuthorization } from "./chain.js";
 import { getResourceServer } from "./resourceServer.js";
 import { validate, validateInput } from "./schema.js";
 
@@ -171,6 +172,13 @@ export function paidRoute<I = any, O = any>(opts: PaidRouteOptions<I, O>) {
       }
       if (/insufficient|expired|valid_before|signature/i.test(settleError)) break;
     }
+    const auth = (payload.payload as any)?.authorization;
+    if (!settle?.success && payer && auth?.nonce) {
+      // An attempt can time out after its tx landed, and the retries then fail on the used nonce. The buyer has paid, so ask
+      // the chain before withholding the output.
+      const onChain = await lookupAuthorization({ from: payer, nonce: auth.nonce, validBefore: Number(auth.validBefore), signedAt: Math.floor(started / 1000) }).catch(() => null);
+      if (onChain?.state === "used" && onChain.to.toLowerCase() === opts.payTo.toLowerCase()) settle = { success: true, transaction: onChain.txHash, network: NETWORK, payer } as typeof settle;
+    }
     if (!settle?.success) return fail(402, short(`settlement failed: ${settleError}`), "settle_failed");
 
     markSettled.run(settle.transaction, key);
@@ -178,7 +186,7 @@ export function paidRoute<I = any, O = any>(opts: PaidRouteOptions<I, O>) {
     c.header("PAYMENT-RESPONSE", encodePaymentResponseHeader(settle));
     // Serialised once, so the receipt's outputHash covers the exact bytes sent.
     const bodyText = JSON.stringify(output);
-    const paymentNonce = (payload.payload as any)?.authorization?.nonce;
+    const paymentNonce = auth?.nonce;
     if (config.stake.receiptSignerKey && payer && /^0x[0-9a-fA-F]{64}$/.test(paymentNonce ?? "")) {
       try {
         const receipt = {

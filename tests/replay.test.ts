@@ -8,7 +8,8 @@ import { decodeReceipt, outputHash, RECEIPT_HEADER, receiptSignerOf, requestHash
 import { accept, SELLER } from "./helpers.js";
 
 // A fake facilitator-backed resource server: the unit under test is our paidRoute ordering (claim nonce -> verify -> run -> settle).
-const fake = vi.hoisted(() => ({ settleCalls: 0, verifyCalls: 0, settleDelayMs: 20, verifyOk: true }));
+const fake = vi.hoisted(() => ({ settleCalls: 0, verifyCalls: 0, settleDelayMs: 20, verifyOk: true, settleError: null as string | null, chain: null as any }));
+vi.mock("../src/x402/chain.js", () => ({ lookupAuthorization: async () => fake.chain }));
 
 vi.mock("../src/x402/resourceServer.js", () => ({
   getResourceServer: async () => ({
@@ -22,6 +23,7 @@ vi.mock("../src/x402/resourceServer.js", () => ({
     settlePayment: async () => {
       fake.settleCalls++;
       await new Promise((r) => setTimeout(r, fake.settleDelayMs));
+      if (fake.settleError) return { success: false, errorReason: fake.settleError };
       return { success: true, transaction: "0x" + "ab".repeat(32), network: NETWORK, payer: "0x" + "99".repeat(20) };
     },
   }),
@@ -58,6 +60,8 @@ beforeEach(() => {
   fake.settleCalls = 0;
   fake.verifyCalls = 0;
   fake.verifyOk = true;
+  fake.settleError = null;
+  fake.chain = null;
   db.exec("DELETE FROM nonces; DELETE FROM sales;");
 });
 
@@ -136,6 +140,22 @@ describe("seller: no service, no charge", () => {
     const res = await app.request("/slow", { headers: { "PAYMENT-SIGNATURE": payment(nonce(3)) } });
     expect(res.status).toBe(504);
     expect(fake.settleCalls).toBe(0);
+  });
+
+  it("a failed settlement the chain shows as paid still delivers the output", async () => {
+    // e.g. attempt 1 timed out after its tx landed, so attempts 2 and 3 failed on the used nonce
+    fake.settleDelayMs = 0;
+    fake.settleError = "nonce already used";
+    fake.chain = { state: "used", txHash: "0x" + "cd".repeat(32), amount: 1000n, to: SELLER };
+    const res = await call(makeApp(async () => ({ rate: 3 })), nonce(5));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rate: 3 });
+    expect(res.headers.get("PAYMENT-RESPONSE")).toBeTruthy();
+    expect((db.prepare("SELECT status, tx_hash FROM sales").get() as any)).toEqual({ status: "paid", tx_hash: "0x" + "cd".repeat(32) });
+
+    fake.chain = { state: "unused", expired: false };
+    expect((await call(makeApp(async () => ({ rate: 3 })), nonce(6))).status).toBe(402);
+    fake.settleDelayMs = 20;
   });
 
   it("a payment that fails verification is bounced with a fresh 402 and never settles", async () => {
