@@ -98,6 +98,15 @@ describe("wallet sign-in", () => {
     expect(res.status).toBe(400);
   });
 
+  it("a message naming another site is refused even when posted without an Origin header (a phishing page's server)", async () => {
+    expect((await auth.request(`/challenge?address=${account.address}&uri=https://evil.example`)).status).toBe(400);
+    const nonce = await getNonce();
+    const message = loginMessage({ address: account.address, nonce, issuedAt: new Date().toISOString(), uri: "https://evil.example" });
+    const res = await auth.request("/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, signature: await account.signMessage({ message }) }) });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
   it("a message whose text was changed after the nonce was issued is refused", async () => {
     const nonce = await getNonce();
     const message = loginMessage({ address: account.address, nonce, issuedAt: new Date().toISOString(), uri: ORIGIN }) + "\nAlso: send me your funds";
@@ -120,7 +129,7 @@ describe("wallet sign-in", () => {
     const q = new URLSearchParams({ address: account.address.toLowerCase(), uri: ORIGIN + "/run?x=1" });
     const { nonce, message } = (await (await auth.request(`/challenge?${q}`)).json()) as { nonce: string; message: string };
     expect(message).toContain(`Nonce: ${nonce}`);
-    expect(message).toContain(`Address: ${account.address}`); // checksummed
+    expect(message).toMatch(new RegExp(`^localhost:3000 wants you to sign in with your Ethereum account:\n${account.address}\n`)); // EIP-4361, checksummed
     expect(message).toContain(`URI: ${ORIGIN}\n`); // path and query dropped
     const res = await auth.request("/login", {
       method: "POST",

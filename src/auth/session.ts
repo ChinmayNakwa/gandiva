@@ -8,27 +8,31 @@ const MAX_OPEN_NONCES = 10_000;
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
-/** The exact text the wallet signs. The server rebuilds it from the nonce, so nothing in it can be bent by the client. */
+/**
+ * The exact text the wallet signs, in the Sign-In with Ethereum (EIP-4361) format so wallets can warn when the site asking
+ * is not the one named. The server rebuilds it from the nonce, so nothing in it can be bent by the client.
+ */
 export function loginMessage(f: { address: string; nonce: string; issuedAt: string; uri: string }): string {
   return [
-    "Gandiva wants you to sign in with your Ethereum account.",
-    "",
-    `Address: ${f.address}`,
-    `URI: ${f.uri}`,
-    `Chain: ${NETWORK}`,
-    `Nonce: ${f.nonce}`,
-    `Issued at: ${f.issuedAt}`,
+    `${URL.canParse(f.uri) ? new URL(f.uri).host : f.uri} wants you to sign in with your Ethereum account:`,
+    f.address,
     "",
     "Signing only proves you own this wallet. It does not move any funds.",
+    "",
+    `URI: ${f.uri}`,
+    "Version: 1",
+    `Chain ID: ${NETWORK.split(":")[1]}`,
+    `Nonce: ${f.nonce}`,
+    `Issued At: ${f.issuedAt}`,
   ].join("\n");
 }
 
 /** Pulls the fields back out of a login message; the caller then checks the message equals loginMessage(fields). */
 export function parseLoginMessage(message: string): { address: string; nonce: string; issuedAt: string; uri: string } | null {
   const field = (name: string) => new RegExp(`^${name}: (.+)$`, "m").exec(message)?.[1]?.trim();
-  const address = field("Address");
+  const address = message.split("\n")[1]?.trim();
   const nonce = field("Nonce");
-  const issuedAt = field("Issued at");
+  const issuedAt = field("Issued At");
   const uri = field("URI");
   return address && nonce && issuedAt && uri ? { address, nonce, issuedAt, uri } : null;
 }

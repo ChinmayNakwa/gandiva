@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { getAddress, isAddress, recoverMessageAddress } from "viem";
+import { config } from "../config.js";
 import { consumeNonce, createNonce, createSession, deleteSession, loginMessage, NONCE_TTL_MS, parseLoginMessage, SESSION_TTL_MS, sessionAddress } from "./session.js";
 
 export const auth = new Hono();
@@ -23,6 +24,7 @@ auth.get("/challenge", (c) => {
   } catch {
     return c.json({ error: "uri must be the site address, e.g. https://example.com" }, 400);
   }
+  if (!config.siteOrigins.includes(origin)) return c.json({ error: `sign-in only works from this site (${config.siteOrigins.join(", ")})` }, 400);
   try {
     const nonce = createNonce();
     return c.json({ nonce, message: loginMessage({ address: getAddress(address), nonce, issuedAt: new Date().toISOString(), uri: origin }) });
@@ -47,9 +49,10 @@ auth.post("/login", bodyLimit({ maxSize: 4096, onError: (c) => c.json({ error: "
 
   const fields = parseLoginMessage(message);
   if (!fields || message !== loginMessage(fields)) return c.json({ error: "this is not a Gandiva sign-in message" }, 400);
-  // Browsers always send Origin on a POST. A page on another site cannot get a signature for our site through this check.
+  // The message must name our own site (a phishing page's server could post one without an Origin header), and browsers
+  // always send Origin on a POST, so a page on another site cannot use a signature made for ours either.
   const origin = c.req.header("origin");
-  if (origin && origin !== fields.uri) return c.json({ error: "sign-in message was made for a different site" }, 400);
+  if (!config.siteOrigins.includes(fields.uri) || (origin && origin !== fields.uri)) return c.json({ error: "sign-in message was made for a different site" }, 400);
   const issued = Date.parse(fields.issuedAt);
   if (!Number.isFinite(issued) || Math.abs(Date.now() - issued) > NONCE_TTL_MS) return c.json({ error: "sign-in message is too old, try again" }, 400);
 

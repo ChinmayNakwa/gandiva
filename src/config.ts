@@ -23,6 +23,13 @@ export const config = {
     const host = new URL(this.publicBaseUrl).hostname;
     return host === "localhost" || host.startsWith("127.") || host === "[::1]";
   },
+  // The UI's own addresses: a wallet sign-in message naming any other site is refused, so a phishing page cannot reuse one.
+  get siteOrigins() {
+    return env("SITE_ORIGINS", "http://localhost:3000,http://localhost:3001,https://gandiva-navy.vercel.app")
+      .split(",")
+      .map((o) => o.trim().replace(/\/$/, ""))
+      .filter(Boolean);
+  },
   facilitatorUrl: env("FACILITATOR_URL", "https://x402.org/facilitator"),
   rpcUrl: env("BASE_SEPOLIA_RPC", "https://sepolia.base.org"),
   buyerPrivateKey: env("BUYER_PRIVATE_KEY") as `0x${string}` | "",
