@@ -4,7 +4,7 @@ import { chainRoute } from "../chains/chains.js";
 import { hostedRoute } from "../hosted/agents.js";
 import { mcpToolRoute } from "../mcpseller/servers.js";
 import { chat } from "../llm.js";
-import { upsertService, type Category, type ServiceInput } from "../registry/store.js";
+import { deleteService, listServices, SEED_OWNER, upsertService, type Category, type ServiceInput } from "../registry/store.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
 import { scrapeCataloguePage } from "./books.js";
 import { forwardTo } from "./proxy.js";
@@ -302,8 +302,11 @@ export function buildSellers(remote: ReadonlyMap<string, number> = new Map()): {
   return { app, active };
 }
 
-/** Registers every active seller in the registry under the current public URL. */
+/** Registers every active seller in the registry under the current public URL, and drops built-in listings that are not active. */
 export function seedRegistry(active: SellerDef[]) {
+  // A built-in seller switched off (SEED_ADVERSARIAL=false, no TRAVEL_BRIEF_KEY) must not stay listed at a route that is gone.
+  const ids = new Set(active.map((d) => d.id));
+  for (const s of listServices()) if (s.owner === SEED_OWNER && !ids.has(s.id)) deleteService(s.id);
   for (const def of active) {
     const listing: ServiceInput = {
       id: def.id,

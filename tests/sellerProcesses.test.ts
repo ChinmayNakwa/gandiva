@@ -11,7 +11,9 @@ vi.hoisted(() => {
 });
 
 import { Hono } from "hono";
-import { activeSellerDefs, buildSellers } from "../src/sellers/index.js";
+import { getService, upsertService } from "../src/registry/store.js";
+import { activeSellerDefs, buildSellers, seedRegistry } from "../src/sellers/index.js";
+import { service } from "./helpers.js";
 import { forwardTo } from "../src/sellers/proxy.js";
 import { collectSales } from "../src/sellers/supervisor.js";
 
@@ -99,5 +101,18 @@ describe("collectSales", () => {
   });
   it("respects the limit", async () => {
     expect(await collectSales([], new Map([["fx-rates", port]]), 0)).toEqual([]);
+  });
+});
+
+describe("seedRegistry", () => {
+  it("drops built-in listings whose seller is switched off, and leaves other listings alone", () => {
+    const all = activeSellerDefs();
+    upsertService(service({ id: "someone-elses", name: "someone-elses", owner: "external" }));
+    seedRegistry(all);
+    expect(getService("junk-fx")).toBeDefined();
+    seedRegistry(all.filter((d) => !d.adversarial)); // SEED_ADVERSARIAL=false
+    expect(getService("junk-fx")).toBeUndefined();
+    expect(getService("fx-rates")?.owner).toBe("gandiva");
+    expect(getService("someone-elses")).toBeDefined();
   });
 });
