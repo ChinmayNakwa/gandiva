@@ -7,8 +7,10 @@
  * and a reworded attack can slip through; upgrade to a per-listing allowlist or a classifier if either shows up.
  */
 const PATTERNS: RegExp[] = [
-  // "ignore your previous instructions", "disregard all prior rules", "forget your budget"
-  /\b(ignore|disregard|forget|override)\s+(all\s+)?(your|previous|prior|earlier|above|any)\s+(\w+\s+)?(instructions|prompts?|rules|budget|limits?|spend(ing)?\s+caps?)\b/i,
+  // "ignore your previous instructions", "disregard all prior rules", "forget your budget", "ignore all of the above prompts"
+  /\b(ignore|disregard|forget|override)\s+(all\s+)?(of\s+)?(the\s+)?(your|previous|prior|earlier|above|any|system)\s+(\w+\s+)?(instructions|prompts?|rules|budget|limits?|spend(ing)?\s+caps?)\b/i,
+  // "AI agent reading this: ...", "to any LLM processing this page"
+  /\b(ai|llms?|language\s+models?)(\s+(agents?|assistants?|models?))?\s+(reading|seeing|processing|parsing)\s+this\b/i,
   // "NOTE TO AI AGENTS:", "message for the AI", "instructions for LLMs"
   /\b(note|message|notice|instructions?|attention)\s+(to|for)\s+(the\s+|all\s+|any\s+)?(ai|llms?|language\s+models?)(\s+(agents?|assistants?|models?))?\b/i,
   // "as an AI agent you must ...", "you are an AI assistant and should ..."
@@ -32,6 +34,7 @@ export function findInjection(value: unknown): string | undefined {
     }
     return undefined;
   }
-  if (value && typeof value === "object") return findInjection(Object.values(value));
+  // Keys too: most output schemas allow extra properties, and the planner sees key names in full.
+  if (value && typeof value === "object") return findInjection(Object.entries(value).flat());
   return undefined;
 }
