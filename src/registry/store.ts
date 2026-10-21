@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "../db.js";
 import { config, MAX_PRICE_UNITS, NETWORK, USDC_ADDRESS } from "../config.js";
+import { hasRiskyPattern, RISKY_PATTERN } from "../x402/schema.js";
 
 export const CATEGORIES = ["data", "inference", "scraping"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -23,8 +24,8 @@ export const serviceInput = z.object({
   network: z.string().default(NETWORK),
   asset: address.default(USDC_ADDRESS),
   payTo: address,
-  inputSchema: z.record(z.string(), z.unknown()),
-  outputSchema: z.record(z.string(), z.unknown()),
+  inputSchema: z.record(z.string(), z.unknown()).refine((s) => !hasRiskyPattern(s), RISKY_PATTERN),
+  outputSchema: z.record(z.string(), z.unknown()).refine((s) => !hasRiskyPattern(s), RISKY_PATTERN),
   description: z.string().max(500).default(""),
   owner: z.string().max(80).default("external"),
 });

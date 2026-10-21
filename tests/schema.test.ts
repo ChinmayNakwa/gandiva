@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validate, validateInput } from "../src/x402/schema.js";
+import { registerExternal } from "../src/registry/store.js";
+import { riskyPattern, validate, validateInput } from "../src/x402/schema.js";
 
 const schema = { type: "object", required: ["rate", "from"], properties: { rate: { type: "number" }, from: { type: "string" } }, additionalProperties: false };
 
@@ -28,5 +29,22 @@ describe("input validation", () => {
   });
   it("rejects values outside the schema", () => {
     expect(validateInput(pageSchema, { page: "0" }).ok).toBe(false);
+  });
+});
+
+describe("regex patterns that can hang the server", () => {
+  it.each(["^(a+)+$", "(a|aa)*", "(\\w+\\s?)*$", "((ab)*)+", "([a-z]{1,3}){2,}"])("%s is refused", (p) => expect(riskyPattern(p)).toBe(true));
+  it.each(["^[A-Z]{3}$", "^\\d+$", "[\\u0900-\\u097F]", "(\\d{1,3}\\.){3}\\d{1,3}", "(?:ab)+", "\\(a+\\)+", "[(a+)]+"])("%s is allowed", (p) => expect(riskyPattern(p)).toBe(false));
+
+  it("validation fails fast instead of backtracking", () => {
+    const started = Date.now();
+    const r = validateInput({ type: "object", properties: { q: { type: "string", pattern: "^(a+)+$" } } }, { q: "a".repeat(40) + "!" });
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/nested repetition/) });
+    expect(Date.now() - started).toBeLessThan(100);
+  });
+
+  it("a listing with one is refused at registration", () => {
+    const listing = { id: "redos", name: "redos", category: "data", endpoint: "https://x.test/a", price: "1000", payTo: "0x" + "11".repeat(20), outputSchema: {} };
+    expect(() => registerExternal({ ...listing, inputSchema: { type: "object", properties: { q: { type: "string", pattern: "(a|aa)*$" } } } })).toThrow(/nested repetition/);
   });
 });

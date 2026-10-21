@@ -5,7 +5,7 @@ import { encryptSecret, secretsConfigured } from "../crypto/secrets.js";
 import { db } from "../db.js";
 import { CATEGORIES, deleteService, getService, listByOwner, MAX_LISTINGS_PER_WALLET, RegistryError, registerForWallet, slug, walletOwner, type Service } from "../registry/store.js";
 import { paidRoute, ServiceError } from "../x402/paidRoute.js";
-import { validateInput } from "../x402/schema.js";
+import { hasRiskyPattern, validateInput } from "../x402/schema.js";
 import { callRemoteTool, checkMcpUrl, listRemoteTools, MAX_TEXT_OUT, MAX_TOOLS_PER_SERVER, McpSellerError, readToken, type RemoteTool, type ToolAnswer } from "./client.js";
 
 const MAX_SCHEMA_BYTES = 8000;
@@ -92,7 +92,7 @@ function cleanSchema(raw: unknown): Record<string, unknown> | null {
   delete schema.$schema;
   delete schema.$id;
   schema.type = "object";
-  if (JSON.stringify(schema).length > MAX_SCHEMA_BYTES) return null;
+  if (JSON.stringify(schema).length > MAX_SCHEMA_BYTES || hasRiskyPattern(schema)) return null;
   try {
     validateInput(schema, {});
   } catch {
