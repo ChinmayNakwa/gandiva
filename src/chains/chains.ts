@@ -235,6 +235,10 @@ export interface ChainDeps {
 }
 
 const inflight = new Map<string, number>();
+/** Owners whose chains are paying suppliers right now (one entry per running request). */
+const payingOwners: string[] = [];
+/** Is one of this wallet's chains paying from its agent wallet right now? (A withdrawal must wait for it.) */
+export const hasActiveChain = (owner: string) => payingOwners.includes(owner.toLowerCase());
 
 /** A chain pays its suppliers before the buyer's payment settles, so a payer whose payments keep failing to settle is refused. */
 export const MAX_STRIKES = 3;
@@ -345,6 +349,7 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
   const busy = inflight.get(chain.serviceId) ?? 0;
   if (busy >= MAX_CONCURRENT) throw new ServiceError(`this chain is already handling ${MAX_CONCURRENT} requests; try again in a moment`, 503);
   inflight.set(chain.serviceId, busy + 1);
+  payingOwners.push(chain.owner.toLowerCase());
   let run: RunState | undefined;
   let cachedSteps = 0;
   try {
@@ -454,6 +459,7 @@ export async function runChain(chain: Chain, input: Record<string, unknown>, dep
       cost_units: run.purchases.filter(isPaid).reduce((sum, p) => sum + BigInt(p.paid), 0n).toString(),
     };
   } finally {
+    payingOwners.splice(payingOwners.indexOf(chain.owner.toLowerCase()), 1);
     const left = (inflight.get(chain.serviceId) ?? 1) - 1;
     if (left > 0) inflight.set(chain.serviceId, left);
     else inflight.delete(chain.serviceId);

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { currentUser } from "../auth/routes.js";
 import { EXPLORER_TX, fromUnits, NETWORK, USDC_ADDRESS } from "../config.js";
 import { hasActiveRun } from "../buyer/scout.js";
+import { hasActiveChain } from "../chains/chains.js";
 import { HostedError } from "../hosted/agents.js";
 import { clearPlannerLlm, plannerLlmInfo, savePlannerLlm } from "./llm.js";
 import { AgentWalletError, ensureAgentWallet, getAgentPayer, listWithdrawals, usdcBalance, withdraw } from "./wallet.js";
@@ -47,7 +48,7 @@ agent.post("/withdraw", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const raw = String(body?.amount ?? "all");
   if (raw !== "all" && !/^\d+$/.test(raw)) return c.json({ error: 'amount must be "all" or a number of USDC smallest units' }, 400);
-  if (hasActiveRun(me)) return c.json({ error: "a run is still paying from your agent wallet; wait for it to finish before withdrawing" }, 409);
+  if (hasActiveRun(me) || hasActiveChain(me)) return c.json({ error: "a run or one of your chains is still paying from your agent wallet; wait for it to finish before withdrawing" }, 409);
   try {
     const w = await withdraw(me, raw === "all" ? "all" : BigInt(raw));
     return c.json({ ...w, amount_usdc: fromUnits(w.amount), explorer: w.tx_hash ? EXPLORER_TX + w.tx_hash : null });

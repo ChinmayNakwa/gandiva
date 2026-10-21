@@ -34,7 +34,7 @@ const { auth } = await import("../src/auth/routes.js");
 const { registry } = await import("../src/registry/routes.js");
 const { buildSellers, sellerDefs } = await import("../src/sellers/index.js");
 const { ensureAgentWallet } = await import("../src/agents/wallet.js");
-const { clearStepCache, fit, kindOf, planChain, runChain, ChainError, MAX_CONCURRENT, MAX_STRIKES } = await import("../src/chains/chains.js");
+const { clearStepCache, fit, hasActiveChain, kindOf, planChain, runChain, ChainError, MAX_CONCURRENT, MAX_STRIKES } = await import("../src/chains/chains.js");
 const { addChainRun, chainStats, getChain, upsertChain } = await import("../src/chains/store.js");
 const { addSale, getService, setVerification, upsertService } = await import("../src/registry/store.js");
 const { ServiceError } = await import("../src/x402/paidRoute.js");
@@ -289,6 +289,18 @@ describe("agent chain: running", () => {
     await expect(run).rejects.toBeInstanceOf(ServiceError);
     await expect(run).rejects.toThrow(/step 3 failed/);
     expect(p.calls.map((c) => c.id)).toEqual(["city-info", "fx-rates", "hindi-summary"]);
+  });
+
+  it("marks its owner as paying while it runs, so a withdrawal waits", async () => {
+    const p = fakePay();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const run = runChain(chainOf(plan()), { city: "Tokyo", currency: "GBP" }, deps(p.pay, { balance: async () => (await gate, 1_000_000n) }));
+    expect(hasActiveChain("0xOWNER")).toBe(true);
+    expect(hasActiveChain("0xsomeone")).toBe(false);
+    release();
+    await run;
+    expect(hasActiveChain("0xowner")).toBe(false);
   });
 
   it("refuses to start without enough float, or when no seller for a step is listed", async () => {
