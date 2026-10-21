@@ -4,7 +4,9 @@ import { config } from "../config.js";
 
 /** True for loopback, private, link-local and other addresses that a public registry should never be pointed at. */
 export function isPrivateAddress(ip: string): boolean {
-  const v4 = ip.toLowerCase().replace(/^::ffff:/, "");
+  // IPv4-mapped IPv6: URL parsing turns [::ffff:127.0.0.1] into ::ffff:7f00:1, which hides the IPv4. No public listing needs one.
+  if (ip.toLowerCase().startsWith("::ffff:")) return true;
+  const v4 = ip.toLowerCase();
   if (isIP(v4) === 4) {
     const [a, b] = v4.split(".").map(Number);
     return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;

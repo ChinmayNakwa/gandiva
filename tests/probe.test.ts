@@ -13,8 +13,12 @@ afterEach(() => {
 const respond = (res: Response | Error) => vi.spyOn(globalThis, "fetch").mockImplementation(async () => (res instanceof Error ? Promise.reject(res) : res.clone()));
 
 describe("isPrivateAddress", () => {
-  it.each(["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1"])("%s is private", (ip) => {
+  it.each(["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "::ffff:a9fe:a9fe"])("%s is private", (ip) => {
     expect(isPrivateAddress(ip)).toBe(true);
+  });
+  it("blocks the hex form a URL parser gives a mapped loopback address", async () => {
+    expect(new URL("http://[::ffff:127.0.0.1]:4100/").hostname).toBe("[::ffff:7f00:1]");
+    expect(await endpointBlockedReason("http://[::ffff:127.0.0.1]:4100/", false)).toMatch(/private/);
   });
   it.each(["8.8.8.8", "172.32.0.1", "172.15.0.1", "1.1.1.1", "2606:4700:4700::1111"])("%s is public", (ip) => {
     expect(isPrivateAddress(ip)).toBe(false);
