@@ -16,7 +16,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
-# src/stake reads contracts/SellerStake.json at startup
+# src/stake reads contracts/SellerStakeV2.json at startup
 COPY contracts ./contracts
 COPY deploy/litestream.yml ./litestream.yml
 # Strip Windows line endings so the script runs on Linux whatever the checkout settings were.

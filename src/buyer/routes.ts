@@ -4,6 +4,7 @@ import { resolvePlannerLlm } from "../agents/llm.js";
 import { currentUser } from "../auth/routes.js";
 import { HostedError } from "../hosted/agents.js";
 import { config, fromUnits, toUnits } from "../config.js";
+import { CATEGORIES } from "../registry/store.js";
 import { scheduler } from "../x402/scheduler.js";
 import { buyCategory, buyOnce, getRun, listRuns, startTask } from "./scout.js";
 
@@ -68,7 +69,7 @@ buyer.get("/runs/:id", (c) => {
 
 buyer.post("/buy", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  if (!["data", "inference", "scraping"].includes(body.category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
+  if (!CATEGORIES.includes(body.category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
   try {
     return c.json(await buyCategory({ category: body.category, input: body.input ?? {}, budget: String(body.budget ?? "0.05"), prefer: typeof body.prefer === "string" ? body.prefer : undefined }));
   } catch (err: any) {

@@ -1,8 +1,4 @@
 import type {
-  Info,
-  LedgerResponse,
-  Run,
-  SalesResponse,
   ChainQuote,
   ChainStepForm,
   ChainTestResult,
@@ -10,7 +6,6 @@ import type {
   McpSaved,
   McpToolsLoaded,
   Service,
-  ServicesResponse,
 } from "./types";
 
 async function get<T>(url: string, init?: RequestInit): Promise<T> {
@@ -26,8 +21,6 @@ async function get<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const fetcher = <T>(url: string): Promise<T> => get<T>(url);
 
-export const getInfo = () => get<Info>("/api/info");
-
 export interface ServiceQuery {
   category?: string;
   maxPrice?: string;
@@ -42,12 +35,6 @@ export function servicesUrl(q: ServiceQuery = {}): string {
   const qs = params.toString();
   return `/registry/services${qs ? `?${qs}` : ""}`;
 }
-
-export const getServices = (q: ServiceQuery = {}) =>
-  get<ServicesResponse>(servicesUrl(q));
-
-export const getLedger = (runId?: string) =>
-  get<LedgerResponse>(`/registry/ledger${runId ? `?runId=${runId}` : ""}`);
 
 export interface ListingForm {
   id?: string;
@@ -134,15 +121,6 @@ export const clearPlannerLlm = () => send<{ ok: true }>("DELETE", "/agent/llm");
 
 export const saveListing = (form: ListingForm) => send<Service>("POST", "/registry/mine/services", form);
 export const deleteListing = (id: string) => send<{ ok: true }>("DELETE", `/registry/mine/services/${encodeURIComponent(id)}`);
-
-export const getSales = () => get<SalesResponse>("/registry/sales");
-
-export const getRun = (id: string) => get<Run>(`/buyer/runs/${id}`);
-
-export const getRuns = () =>
-  get<{ runs: (Pick<Run, "id" | "task" | "state" | "startedAt" | "spent" | "budget">)[] }>(
-    "/buyer/runs",
-  );
 
 export function startRun(body: {
   task: string;

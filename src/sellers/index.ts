@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { config } from "../config.js";
+import { config, NETWORK, USDC_ADDRESS } from "../config.js";
 import { chainRoute } from "../chains/chains.js";
 import { hostedRoute } from "../hosted/agents.js";
 import { mcpToolRoute } from "../mcpseller/servers.js";
@@ -315,8 +315,8 @@ export function seedRegistry(active: SellerDef[]) {
       endpoint: `${config.publicBaseUrl}/sellers/${def.id}${def.path}`,
       method: def.method,
       price: def.listedPrice.toString(),
-      network: "eip155:84532",
-      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      network: NETWORK,
+      asset: USDC_ADDRESS,
       payTo: def.payTo,
       inputSchema: def.inputSchema,
       outputSchema: def.outputSchema,

@@ -19,7 +19,7 @@ import { endpointBlockedReason, verifyService } from "./probe.js";
 import { groupServices } from "../buyer/catalogue.js";
 import { stakeOf } from "../stake/index.js";
 import { credibilityCached, credibilityFor, ProofError, proofMessage, submitPayToProof } from "./credibility.js";
-import { deleteOwnedService, deleteService, explainRank, getService, listByOwner, listLedger, listSales, recentCalls, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices, slug } from "./store.js";
+import { CATEGORIES, deleteOwnedService, deleteService, explainRank, getService, listByOwner, listLedger, listSales, recentCalls, RegistryError, registerExternal, registerForWallet, reputationFor, searchServices, slug } from "./store.js";
 
 export const registry = new Hono();
 
@@ -66,7 +66,7 @@ registry.post("/services/:id/proof", async (c) => {
  */
 registry.get("/compare", async (c) => {
   const { category, ids, selected } = c.req.query();
-  if (!category || !["data", "inference", "scraping"].includes(category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
+  if (!category || !(CATEGORIES as readonly string[]).includes(category)) return c.json({ error: "category must be data, inference or scraping" }, 400);
   const all = searchServices({ category });
   // With a selected seller, compare it only with the sellers the buyer would treat as substitutes (same input and output schema).
   const group = selected ? groupServices(all).find((g) => g.memberIds.includes(selected)) : undefined;
